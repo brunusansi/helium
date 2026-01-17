@@ -1,6 +1,5 @@
 import SwiftUI
 import WebKit
-@preconcurrency import SafariServices
 
 /// Browser view with WebKit and fingerprint injection
 struct BrowserView: View {

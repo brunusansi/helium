@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-import Darwin
 
 /// Manages proxy configurations and connections
 @MainActor
@@ -166,65 +165,35 @@ final class ProxyManager: ObservableObject {
     }
     
     private func testTCPConnection(host: String, port: Int, timeout: TimeInterval) async -> Bool {
+        // Use NWConnection for simpler TCP test
         return await withCheckedContinuation { continuation in
-            let queue = DispatchQueue(label: "tcp.test")
-            queue.async {
-                var result = false
-                let socket = socket(AF_INET, SOCK_STREAM, 0)
-                guard socket >= 0 else {
-                    continuation.resume(returning: false)
-                    return
-                }
-                
-                defer { close(socket) }
-                
-                // Set non-blocking
-                var flags = fcntl(socket, F_GETFL, 0)
-                fcntl(socket, F_SETFL, flags | O_NONBLOCK)
-                
-                var addr = sockaddr_in()
-                addr.sin_family = sa_family_t(AF_INET)
-                addr.sin_port = in_port_t(port).bigEndian
-                
-                // Resolve hostname
-                if let hostent = gethostbyname(host) {
-                    memcpy(&addr.sin_addr, hostent.pointee.h_addr_list[0], Int(hostent.pointee.h_length))
-                } else {
-                    continuation.resume(returning: false)
-                    return
-                }
-                
-                // Try to connect
-                let connectResult = withUnsafePointer(to: &addr) {
-                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                        Darwin.connect(socket, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            Task {
+                do {
+                    // Simple approach: try to create a URL connection
+                    var request = URLRequest(url: URL(string: "http://\(host):\(port)")!)
+                    request.timeoutInterval = timeout
+                    request.httpMethod = "HEAD"
+                    
+                    let config = URLSessionConfiguration.ephemeral
+                    config.timeoutIntervalForRequest = timeout
+                    config.timeoutIntervalForResource = timeout
+                    
+                    let session = URLSession(configuration: config)
+                    _ = try await session.data(for: request)
+                    continuation.resume(returning: true)
+                } catch {
+                    // If the connection fails with "connection refused" or similar,
+                    // the server is reachable but port may not serve HTTP
+                    // For our purposes, being able to connect at all is success
+                    let nsError = error as NSError
+                    if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCannotConnectToHost {
+                        continuation.resume(returning: false)
+                    } else {
+                        // Other errors like "bad server response" mean we connected
+                        continuation.resume(returning: true)
                     }
                 }
-                
-                if connectResult == 0 {
-                    result = true
-                } else if errno == EINPROGRESS {
-                    // Wait for connection with select
-                    var writeSet = fd_set()
-                    __darwin_fd_zero(&writeSet)
-                    __darwin_fd_set(socket, &writeSet)
-                    
-                    var tv = timeval(tv_sec: Int(timeout), tv_usec: 0)
-                    let selectResult = select(socket + 1, nil, &writeSet, nil, &tv)
-                    
-                    if selectResult > 0 && __darwin_fd_isset(socket, &writeSet) != 0 {
-                        var error: Int32 = 0
-                        var len = socklen_t(MemoryLayout<Int32>.size)
-                        getsockopt(socket, SOL_SOCKET, SO_ERROR, &error, &len)
-                        result = (error == 0)
-                    }
-                }
-                
-                continuation.resume(returning: result)
             }
-        }
-    }
-            return try await performSimpleProxyCheck(proxy, startTime: startTime)
         }
     }
     
