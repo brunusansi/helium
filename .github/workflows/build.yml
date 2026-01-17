@@ -106,8 +106,13 @@ jobs:
 
       - name: Create DMG
         run: |
-          # Create DMG
-          hdiutil create -volname "Helium" -srcfolder Helium.app -ov -format UDZO Helium-${{ matrix.arch }}.dmg
+          # Create DMG folder with Applications shortcut
+          mkdir -p dmg_contents
+          cp -R Helium.app dmg_contents/
+          ln -s /Applications dmg_contents/Applications
+          
+          # Create DMG with Applications link for drag-and-drop install
+          hdiutil create -volname "Helium" -srcfolder dmg_contents -ov -format UDZO Helium-${{ matrix.arch }}.dmg
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
