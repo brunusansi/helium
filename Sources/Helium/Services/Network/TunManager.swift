@@ -114,11 +114,11 @@ final class TunManager: ObservableObject {
         let tunSubnet = "10.0.\(tunIndex).0/24"
         
         // Start tun2socks process
-        // tun2socks -device utun://utun0 -proxy socks5://127.0.0.1:10800
+        // tun2socks -device utun0 -proxy socks5://127.0.0.1:10800
         let process = Process()
         process.executableURL = binaryPath
         process.arguments = [
-            "-device", "utun://\(tunDevice)",
+            "-device", tunDevice,
             "-proxy", "socks5://127.0.0.1:\(socksPort)",
             "-loglevel", "warn"
         ]

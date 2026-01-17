@@ -206,6 +206,7 @@ struct NewProfileSheet: View {
     @State private var selectedFolderId: UUID?
     @State private var startUrl: String = "https://www.google.com"
     @State private var fingerprintMode: FingerprintMode = .random
+    @State private var customFingerprint: FingerprintConfig = .random()
     
     enum FingerprintMode: String, CaseIterable {
         case random = "Random"
@@ -265,6 +266,60 @@ struct NewProfileSheet: View {
                         Text("A unique fingerprint will be generated automatically")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                    } else {
+                        // Custom fingerprint options
+                        LabeledContent("CPU Cores") {
+                            Picker("", selection: $customFingerprint.cpuCores) {
+                                ForEach([4, 8, 12, 16], id: \.self) { cores in
+                                    Text("\(cores)").tag(cores)
+                                }
+                            }
+                            .frame(width: 80)
+                        }
+                        
+                        LabeledContent("Memory") {
+                            Picker("", selection: $customFingerprint.deviceMemory) {
+                                ForEach([4, 8, 16], id: \.self) { memory in
+                                    Text("\(memory) GB").tag(memory)
+                                }
+                            }
+                            .frame(width: 80)
+                        }
+                        
+                        LabeledContent("Screen") {
+                            Picker("", selection: Binding(
+                                get: { "\(customFingerprint.screenWidth)x\(customFingerprint.screenHeight)" },
+                                set: { newValue in
+                                    let parts = newValue.split(separator: "x")
+                                    if parts.count == 2,
+                                       let w = Int(parts[0]),
+                                       let h = Int(parts[1]) {
+                                        customFingerprint.screenWidth = w
+                                        customFingerprint.screenHeight = h
+                                    }
+                                }
+                            )) {
+                                Text("1920×1080").tag("1920x1080")
+                                Text("2560×1440").tag("2560x1440")
+                                Text("1440×900").tag("1440x900")
+                                Text("1680×1050").tag("1680x1050")
+                            }
+                            .frame(width: 120)
+                        }
+                        
+                        LabeledContent("WebRTC") {
+                            Picker("", selection: $customFingerprint.webrtcPolicy) {
+                                ForEach(WebRTCPolicy.allCases, id: \.self) { policy in
+                                    Text(policy.displayName).tag(policy)
+                                }
+                            }
+                            .frame(width: 180)
+                        }
+                        
+                        Button("Regenerate") {
+                            customFingerprint = .random()
+                        }
+                        .font(.caption)
                     }
                 }
             }
@@ -283,15 +338,16 @@ struct NewProfileSheet: View {
             }
             .padding()
         }
-        .frame(width: 450, height: 400)
+        .frame(width: 450, height: fingerprintMode == .custom ? 580 : 400)
     }
     
     private func createProfile() {
+        let fingerprint = fingerprintMode == .random ? FingerprintConfig.random() : customFingerprint
         let profile = Profile(
             name: name,
             folderId: selectedFolderId,
             proxyId: selectedProxyId,
-            fingerprint: .random(),
+            fingerprint: fingerprint,
             startUrl: startUrl
         )
         

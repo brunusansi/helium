@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 @main
 struct HeliumApp: App {
@@ -15,8 +16,10 @@ struct HeliumApp: App {
                 .environmentObject(proxyManager)
                 .environmentObject(xrayService)
                 .frame(minWidth: 1200, minHeight: 800)
+                .background(TranslucentBackground())
         }
         .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             HeliumCommands()
         }
@@ -97,4 +100,27 @@ extension Notification.Name {
     static let importProfiles = Notification.Name("importProfiles")
     static let exportProfiles = Notification.Name("exportProfiles")
     static let toggleSidebar = Notification.Name("toggleSidebar")
+}
+
+// MARK: - Translucent Background
+
+/// Elegant translucent background using NSVisualEffectView
+struct TranslucentBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.blendingMode = .behindWindow
+        view.state = .active
+        view.material = .sidebar // Elegant translucent material
+        return view
+    }
+    
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
+
+// MARK: - Visual Effect Modifier
+
+extension View {
+    func translucentBackground() -> some View {
+        self.background(TranslucentBackground())
+    }
 }
