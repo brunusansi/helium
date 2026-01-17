@@ -77,3 +77,7 @@ coverage/
 # Logs
 *.log
 logs/
+
+# Internal development files
+AGENTS.md
+.github/copilot-instructions.md
