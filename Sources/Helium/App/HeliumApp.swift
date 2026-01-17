@@ -26,17 +26,8 @@ struct HeliumApp: App {
                 .environmentObject(appState)
                 .environmentObject(profileManager)
                 .environmentObject(proxyManager)
+                .environmentObject(xrayService)
         }
-        
-        WindowGroup("Browser", for: UUID.self) { $profileId in
-            if let id = profileId,
-               let profile = profileManager.profiles.first(where: { $0.id == id }) {
-                BrowserView(profile: profile)
-                    .environmentObject(xrayService)
-                    .environmentObject(proxyManager)
-            }
-        }
-        .windowStyle(.hiddenTitleBar)
     }
 }
 

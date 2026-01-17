@@ -5,6 +5,7 @@ struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var profileManager: ProfileManager
     @EnvironmentObject var proxyManager: ProxyManager
+    @EnvironmentObject var xrayService: XrayService
     
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     

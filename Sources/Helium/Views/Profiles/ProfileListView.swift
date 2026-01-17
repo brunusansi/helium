@@ -5,6 +5,8 @@ struct ProfileListView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var profileManager: ProfileManager
     @EnvironmentObject var proxyManager: ProxyManager
+    @EnvironmentObject var xrayService: XrayService
+    @StateObject private var safariLauncher = SafariLauncher.shared
     
     let folderId: UUID?
     
@@ -12,6 +14,8 @@ struct ProfileListView: View {
     @State private var selectedProfile: Profile?
     @State private var showingDeleteConfirmation: Bool = false
     @State private var hoveredProfileId: UUID?
+    @State private var launchError: String?
+    @State private var showingLaunchError: Bool = false
     
     init(folderId: UUID? = nil) {
         self.folderId = folderId
@@ -107,6 +111,11 @@ struct ProfileListView: View {
         } message: {
             Text("Are you sure you want to delete \(appState.selectedProfileIds.count) profile(s)? This action cannot be undone.")
         }
+        .alert("Launch Error", isPresented: $showingLaunchError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(launchError ?? "Unknown error occurred")
+        }
     }
     
     private func toggleSelection(_ id: UUID) {
@@ -118,24 +127,30 @@ struct ProfileListView: View {
     }
     
     private func launchProfile(_ profile: Profile) {
-        profileManager.launchProfile(profile.id)
-        // Open browser window
-        if NSApplication.shared.windows.first != nil {
-            let hostingController = NSHostingController(
-                rootView: BrowserView(profile: profile)
-                    .environmentObject(XrayService())
-                    .environmentObject(proxyManager)
-            )
-            let newWindow = NSWindow(contentViewController: hostingController)
-            newWindow.title = profile.name
-            newWindow.setContentSize(NSSize(width: 1200, height: 800))
-            newWindow.center()
-            newWindow.makeKeyAndOrderFront(nil)
+        let proxy = profile.proxyId.flatMap { proxyManager.getProxy($0) }
+        
+        Task {
+            do {
+                try await safariLauncher.launchProfile(
+                    profile: profile,
+                    proxy: proxy,
+                    xrayService: xrayService
+                )
+                profileManager.launchProfile(profile.id)
+            } catch {
+                await MainActor.run {
+                    launchError = error.localizedDescription
+                    showingLaunchError = true
+                }
+            }
         }
     }
     
     private func stopProfile(_ profile: Profile) {
-        profileManager.stopProfile(profile.id)
+        Task {
+            await safariLauncher.stopProfile(profileId: profile.id, xrayService: xrayService)
+            profileManager.stopProfile(profile.id)
+        }
     }
     
     private func duplicateProfile(_ profile: Profile) {
