@@ -113,31 +113,67 @@ final class TunManager: ObservableObject {
         let tunGateway = "10.0.\(tunIndex).0"
         let tunSubnet = "10.0.\(tunIndex).0/24"
         
-        // Start tun2socks process
-        // tun2socks -device utun0 -proxy socks5://127.0.0.1:10800
-        let process = Process()
-        process.executableURL = binaryPath
-        process.arguments = [
-            "-device", tunDevice,
-            "-proxy", "socks5://127.0.0.1:\(socksPort)",
-            "-loglevel", "warn"
-        ]
+        // Start tun2socks with sudo (requires admin password)
+        // Using AppleScript to request admin privileges
+        let tun2socksPath = binaryPath?.path ?? ""
+        let args = "-device \(tunDevice) -proxy socks5://127.0.0.1:\(socksPort) -loglevel warn"
         
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
+        // Create a shell script to run tun2socks with sudo
+        let scriptPath = FileManager.default.temporaryDirectory.appendingPathComponent("helium_tun_\(tunIndex).sh")
+        let script = """
+        #!/bin/bash
+        "\(tun2socksPath)" \(args) &
+        echo $!
+        """
         
-        try process.run()
+        try script.write(to: scriptPath, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath.path)
+        
+        // Request admin privileges via AppleScript
+        let appleScript = """
+        do shell script "\(scriptPath.path)" with administrator privileges
+        """
+        
+        var error: NSDictionary?
+        guard let scriptObject = NSAppleScript(source: appleScript) else {
+            releaseTunIndex(tunIndex)
+            throw TunError.startFailed("Failed to create AppleScript")
+        }
+        
+        let output = scriptObject.executeAndReturnError(&error)
+        
+        if let error = error {
+            let errorMessage = error[NSAppleScript.errorMessage] as? String ?? "Unknown error"
+            releaseTunIndex(tunIndex)
+            // Clean up script
+            try? FileManager.default.removeItem(at: scriptPath)
+            throw TunError.startFailed(errorMessage)
+        }
+        
+        // Get the PID from output
+        let pidString = output.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let pid = Int32(pidString) ?? 0
+        
+        // Clean up script
+        try? FileManager.default.removeItem(at: scriptPath)
         
         // Wait for interface to come up
-        try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+        try await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
         
-        guard process.isRunning else {
-            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-            let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+        // Verify TUN interface exists
+        let checkProcess = Process()
+        checkProcess.executableURL = URL(fileURLWithPath: "/sbin/ifconfig")
+        checkProcess.arguments = [tunDevice]
+        let checkPipe = Pipe()
+        checkProcess.standardOutput = checkPipe
+        checkProcess.standardError = checkPipe
+        
+        try checkProcess.run()
+        checkProcess.waitUntilExit()
+        
+        guard checkProcess.terminationStatus == 0 else {
             releaseTunIndex(tunIndex)
-            throw TunError.startFailed(errorMessage)
+            throw TunError.startFailed("TUN interface \(tunDevice) not created")
         }
         
         // Configure routing for this TUN interface
@@ -151,7 +187,7 @@ final class TunManager: ObservableObject {
             tunGateway: tunGateway,
             tunSubnet: tunSubnet,
             socksPort: socksPort,
-            process: process,
+            pid: pid,
             startedAt: Date()
         )
         
@@ -167,9 +203,17 @@ final class TunManager: ObservableObject {
         // Remove routing rules
         await removeRouting(tunDevice: session.tunDevice)
         
-        // Terminate tun2socks process
-        if session.process.isRunning {
-            session.process.terminate()
+        // Terminate tun2socks process (requires sudo since it runs as root)
+        if session.isRunning {
+            // Kill process with sudo
+            let killScript = "kill -9 \(session.pid)"
+            let appleScript = """
+            do shell script "\(killScript)" with administrator privileges
+            """
+            var error: NSDictionary?
+            if let script = NSAppleScript(source: appleScript) {
+                script.executeAndReturnError(&error)
+            }
         }
         
         // Release TUN index
@@ -285,11 +329,12 @@ struct TunSession: Identifiable {
     let tunGateway: String
     let tunSubnet: String
     let socksPort: Int
-    let process: Process
+    let pid: Int32  // Process ID (runs with sudo)
     let startedAt: Date
     
     var isRunning: Bool {
-        process.isRunning
+        // Check if process with PID is running
+        kill(pid, 0) == 0
     }
 }
 
