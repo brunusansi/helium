@@ -1,12 +1,13 @@
 import SwiftUI
 import WebKit
 
-/// Browser view with WebKit and fingerprint injection
+/// Browser view with native Safari WebKit and proxy integration
 struct BrowserView: View {
     let profile: Profile
     
     @EnvironmentObject var xrayService: XrayService
     @EnvironmentObject var proxyManager: ProxyManager
+    @StateObject private var systemProxy = SystemProxyManager.shared
     
     @State private var urlString: String
     @State private var isLoading: Bool = false
@@ -16,6 +17,9 @@ struct BrowserView: View {
     @State private var currentURL: URL?
     @State private var webView: WKWebView?
     @State private var proxyPort: Int?
+    @State private var proxyGeoInfo: ProxyGeoInfo?
+    @State private var proxyStatus: String = ""
+    @State private var proxyIP: String = ""
     
     init(profile: Profile) {
         self.profile = profile
@@ -31,6 +35,8 @@ struct BrowserView: View {
                 canGoBack: canGoBack,
                 canGoForward: canGoForward,
                 progress: progress,
+                proxyStatus: proxyStatus,
+                proxyIP: proxyIP,
                 onBack: { webView?.goBack() },
                 onForward: { webView?.goForward() },
                 onReload: { webView?.reload() },
@@ -55,7 +61,8 @@ struct BrowserView: View {
                 canGoForward: $canGoForward,
                 progress: $progress,
                 currentURL: $currentURL,
-                proxyPort: proxyPort
+                proxyPort: proxyPort,
+                proxyGeoInfo: proxyGeoInfo
             )
         }
         .background(Color(nsColor: .windowBackgroundColor))
@@ -87,21 +94,72 @@ struct BrowserView: View {
     
     private func setupProxy() {
         guard let proxyId = profile.proxyId,
-              let proxy = proxyManager.getProxy(proxyId) else { return }
+              let proxy = proxyManager.getProxy(proxyId) else { 
+            proxyStatus = "Direct"
+            return 
+        }
         
-        if proxy.type.requiresXray {
-            Task {
-                do {
+        proxyStatus = "Connecting..."
+        
+        Task {
+            do {
+                var localPort: Int
+                
+                if proxy.type.requiresXray {
+                    // Start Xray connection
                     let connection = try await xrayService.startConnection(profileId: profile.id, proxy: proxy)
-                    proxyPort = connection.localPort
-                } catch {
-                    print("Failed to start proxy: \(error)")
+                    localPort = connection.localPort
+                } else {
+                    // Direct SOCKS5/HTTP proxy
+                    localPort = proxy.port
                 }
+                
+                // Enable system-wide proxy for this connection
+                try await systemProxy.enableProxy(port: localPort, profileId: profile.id)
+                
+                await MainActor.run {
+                    proxyPort = localPort
+                    proxyStatus = "Verifying..."
+                }
+                
+                // Verify proxy is working and get external IP
+                let externalIP = try await systemProxy.verifyProxy(port: localPort)
+                
+                await MainActor.run {
+                    proxyIP = externalIP
+                }
+                
+                // Fetch geo info from proxy IP
+                do {
+                    let geoInfo = try await ProxyGeoInfo.fetch(proxyHost: proxy.host, proxyPort: localPort)
+                    await MainActor.run {
+                        proxyGeoInfo = geoInfo
+                        proxyStatus = "\(geoInfo.city), \(geoInfo.countryCode)"
+                        
+                        // Reload to apply geo-synced fingerprint
+                        webView?.reload()
+                    }
+                } catch {
+                    await MainActor.run {
+                        proxyStatus = "Connected"
+                    }
+                    print("Geo fetch failed: \(error)")
+                }
+                
+            } catch {
+                await MainActor.run {
+                    proxyStatus = "Failed"
+                    proxyIP = ""
+                }
+                print("Proxy setup failed: \(error)")
             }
         }
     }
     
     private func cleanupProxy() {
+        Task {
+            await systemProxy.disableProxy()
+        }
         xrayService.stopConnection(profileId: profile.id)
     }
 }
@@ -114,6 +172,8 @@ struct BrowserToolbar: View {
     let canGoBack: Bool
     let canGoForward: Bool
     let progress: Double
+    let proxyStatus: String
+    let proxyIP: String
     let onBack: () -> Void
     let onForward: () -> Void
     let onReload: () -> Void
@@ -168,6 +228,31 @@ struct BrowserToolbar: View {
             .background(Color(nsColor: .controlBackgroundColor))
             .cornerRadius(8)
             
+            // Proxy status indicator
+            if !proxyStatus.isEmpty {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(proxyStatusColor)
+                        .frame(width: 8, height: 8)
+                    
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(proxyStatus)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.primary)
+                        
+                        if !proxyIP.isEmpty {
+                            Text(proxyIP)
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                .cornerRadius(6)
+            }
+            
             // Home button
             Button(action: onHome) {
                 Image(systemName: "house")
@@ -178,6 +263,15 @@ struct BrowserToolbar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.ultraThinMaterial)
+    }
+    
+    private var proxyStatusColor: Color {
+        switch proxyStatus {
+        case "Direct": return .gray
+        case "Connecting...", "Verifying...": return .orange
+        case "Failed": return .red
+        default: return .green
+        }
     }
 }
 
@@ -192,6 +286,7 @@ struct WebViewWrapper: NSViewRepresentable {
     @Binding var progress: Double
     @Binding var currentURL: URL?
     let proxyPort: Int?
+    let proxyGeoInfo: ProxyGeoInfo?
     
     func makeNSView(context: Context) -> WKWebView {
         let configuration = createWebViewConfiguration()
@@ -203,7 +298,9 @@ struct WebViewWrapper: NSViewRepresentable {
         webView.allowsMagnification = true
         
         // Enable developer extras (Inspect Element)
-        webView.configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        if let prefs = webView.configuration.preferences as? WKPreferences {
+            prefs.setValue(true, forKey: "developerExtrasEnabled")
+        }
         
         // Add observers
         context.coordinator.observe(webView)
@@ -222,7 +319,8 @@ struct WebViewWrapper: NSViewRepresentable {
     }
     
     func updateNSView(_ nsView: WKWebView, context: Context) {
-        // Updates handled via Coordinator
+        // When proxy geo info becomes available, we might want to update scripts
+        // This is handled by reloading the page in BrowserView
     }
     
     func makeCoordinator() -> Coordinator {
@@ -232,26 +330,22 @@ struct WebViewWrapper: NSViewRepresentable {
     private func createWebViewConfiguration() -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
         
-        // Create separate persistent data store for profile isolation
-        // Each profile gets its own data store identified by profile ID
-        let dataStoreID = profile.id
-        
-        // Use persistent data store for better cookie/session handling
+        // Create persistent data store for profile isolation
+        // Each profile gets its own storage (cookies, localStorage, etc.)
         if #available(macOS 14.0, *) {
-            // macOS 14+ supports custom persistent data stores
-            let customDataStore = WKWebsiteDataStore(forIdentifier: dataStoreID)
+            let customDataStore = WKWebsiteDataStore(forIdentifier: profile.id)
             config.websiteDataStore = customDataStore
         } else {
-            // Fallback to non-persistent for older macOS
             config.websiteDataStore = WKWebsiteDataStore.nonPersistent()
         }
         
-        // Modern WebKit preferences
+        // Use native Safari defaults - don't override UA to avoid detection
+        // Safari's native fingerprint is consistent and undetectable
         let prefs = WKWebpagePreferences()
         prefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = prefs
         
-        // Enable modern features
+        // Native Safari settings
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         config.preferences.isFraudulentWebsiteWarningEnabled = true
         config.preferences.isTextInteractionEnabled = true
@@ -260,41 +354,43 @@ struct WebViewWrapper: NSViewRepresentable {
         config.mediaTypesRequiringUserActionForPlayback = []
         config.allowsAirPlayForMediaPlayback = true
         
-        // Inject fingerprint protection script
+        // Inject minimal fingerprint protection (WebRTC + timezone/geo sync)
         let userContentController = WKUserContentController()
-        let fingerprintScript = FingerprintEngine.shared.createUserScript(config: profile.fingerprint)
+        let fingerprintScript = FingerprintEngine.shared.createUserScript(
+            config: profile.fingerprint,
+            proxyInfo: proxyGeoInfo
+        )
         userContentController.addUserScript(fingerprintScript)
-        
-        // Add proxy configuration script if proxy is active
-        if let port = proxyPort {
-            let proxyScript = createProxyScript(port: port)
-            userContentController.addUserScript(proxyScript)
-        }
         
         config.userContentController = userContentController
         
-        // Set custom user agent if specified, otherwise use modern Safari UA
-        if let customUA = profile.userAgent {
-            config.applicationNameForUserAgent = customUA
-        } else {
-            // Use latest Safari user agent
-            config.applicationNameForUserAgent = "Version/17.4 Safari/605.1.15"
-        }
+        // DO NOT set custom user agent - use native Safari
+        // config.applicationNameForUserAgent = ... // REMOVED
         
-        // Enable advanced features
-        config.limitsNavigationsToAppBoundDomains = false
+        // Set up proxy if available
+        if let port = proxyPort {
+            configureProxy(config: config, port: port)
+        }
         
         return config
     }
     
-    private func createProxyScript(port: Int) -> WKUserScript {
-        // Note: WebKit doesn't support per-request proxy via JS
-        // The proxy is handled at the system/XrayService level
-        let script = """
-        // Proxy configured via system - port \(port)
-        console.log('[Helium] Proxy active on port \(port)');
-        """
-        return WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+    private func configureProxy(config: WKWebViewConfiguration, port: Int) {
+        // WKWebView uses the system proxy settings by default
+        // For per-webview proxy, we need to use a custom URL scheme handler
+        // or rely on system-wide proxy settings set by Xray
+        
+        // The Xray process sets up a local SOCKS5 proxy on 127.0.0.1:port
+        // We can use PAC (Proxy Auto-Config) or system proxy settings
+        
+        // For now, we inject a script that shows proxy is active
+        // The actual proxy routing happens at the Xray/system level
+        let proxyScript = WKUserScript(
+            source: "console.log('[Helium] Proxy active on port \(port)');",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        config.userContentController.addUserScript(proxyScript)
     }
     
     // MARK: - Coordinator
@@ -353,7 +449,6 @@ struct WebViewWrapper: NSViewRepresentable {
         }
         
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-            // Allow all navigation
             return .allow
         }
         

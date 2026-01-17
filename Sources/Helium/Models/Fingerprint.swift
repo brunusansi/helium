@@ -62,10 +62,10 @@ struct FingerprintConfig: Codable, Hashable {
         webglRenderer: String = "WebKit WebGL",
         webglUnmaskedVendor: String = "Apple Inc.",
         webglUnmaskedRenderer: String = "Apple M1",
-        canvasNoise: Double = 0.0001,
-        audioNoise: Double = 0.0001,
-        timezone: TimezoneConfig = .auto,
-        geolocation: GeolocationConfig = .auto,
+        canvasNoise: Double = 0.0, // Disabled - causes detection
+        audioNoise: Double = 0.0, // Disabled - causes detection
+        timezone: TimezoneConfig = .matchProxy, // Auto-sync with proxy
+        geolocation: GeolocationConfig = .matchProxy, // Auto-sync with proxy
         languages: [String] = ["en-US", "en"],
         acceptLanguage: String = "en-US,en;q=0.9",
         webrtcPolicy: WebRTCPolicy = .disableNonProxiedUdp,
@@ -127,10 +127,10 @@ struct FingerprintConfig: Codable, Hashable {
             webglRenderer: "WebKit WebGL",
             webglUnmaskedVendor: "Apple Inc.",
             webglUnmaskedRenderer: selectedGpu,
-            canvasNoise: Double.random(in: 0.0001...0.001),
-            audioNoise: Double.random(in: 0.0001...0.001),
-            timezone: .auto,
-            geolocation: .auto,
+            canvasNoise: 0.0, // Disabled - native Safari fingerprint
+            audioNoise: 0.0,  // Disabled - native Safari fingerprint
+            timezone: .matchProxy, // Auto-sync with proxy location
+            geolocation: .matchProxy, // Auto-sync with proxy location
             languages: ["en-US", "en"],
             acceptLanguage: "en-US,en;q=0.9",
             webrtcPolicy: .disableNonProxiedUdp,
