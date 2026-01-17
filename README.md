@@ -92,6 +92,16 @@ Create unlimited isolated browser profiles, each with its own:
 - 🌐 Proxy configuration
 - 🎭 Unique fingerprint
 - 🏷️ Tags and folder organization
+- 🔒 **Encrypted export/import** (ChaChaPoly encryption)
+
+### 🔒 Security Features
+
+| Feature | Description |
+|---------|-------------|
+| **Profile Encryption** | Export profiles with password-protected ChaChaPoly encryption |
+| **Local Storage Only** | All data stored locally - no cloud, no tracking |
+| **Secure Key Derivation** | HKDF-SHA256 for key derivation from passwords |
+| **Auto-Update Check** | Check for updates from GitHub without auto-downloading |
 
 ### 🎨 Beautiful Minimalist Interface
 
@@ -255,7 +265,11 @@ Helium is tested against major anti-fraud and bot detection systems:
 - [x] Core profile management
 - [x] Xray-core integration
 - [x] Basic fingerprint spoofing
-- [ ] Profile sync (encrypted, optional)
+- [x] Network isolation (TUN/PAC/System)
+- [x] Profile export/import (encrypted)
+- [x] Tag organization for profiles
+- [x] Auto-update notifications
+- [ ] Profile sync (cloud, encrypted)
 - [ ] Browser automation API
 - [ ] Selenium/Playwright integration
 - [ ] Mobile user-agent emulation
