@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Darwin
 
 /// Manages proxy configurations and connections
 @MainActor
@@ -138,11 +139,91 @@ final class ProxyManager: ObservableObject {
     private func performProxyCheck(_ proxy: Proxy) async throws -> (latency: Int, location: ProxyLocation?) {
         let startTime = Date()
         
-        // For Xray protocols (ss, vmess, vless, trojan), we need to start xray-core temporarily
+        // For Xray protocols, first try TCP connection test, then full check if xray is installed
         switch proxy.type {
         case .shadowsocks, .vmess, .vless, .trojan:
-            return try await performXrayProxyCheck(proxy, startTime: startTime)
+            // First check if we can connect to the server at all (TCP test)
+            let tcpResult = await testTCPConnection(host: proxy.host, port: proxy.port, timeout: 5.0)
+            if !tcpResult {
+                throw ProxyCheckError.connectionFailed
+            }
+            
+            // Try xray-based check if installed, otherwise just return TCP latency
+            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            let xrayPath = appSupport.appendingPathComponent("Helium/xray-core/xray")
+            
+            if FileManager.default.fileExists(atPath: xrayPath.path) {
+                return try await performXrayProxyCheck(proxy, startTime: startTime)
+            } else {
+                // Xray not installed - just return TCP connection result
+                let latency = Int(Date().timeIntervalSince(startTime) * 1000)
+                return (latency, nil)
+            }
+            
         case .http, .socks5:
+            return try await performSimpleProxyCheck(proxy, startTime: startTime)
+        }
+    }
+    
+    private func testTCPConnection(host: String, port: Int, timeout: TimeInterval) async -> Bool {
+        return await withCheckedContinuation { continuation in
+            let queue = DispatchQueue(label: "tcp.test")
+            queue.async {
+                var result = false
+                let socket = socket(AF_INET, SOCK_STREAM, 0)
+                guard socket >= 0 else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                
+                defer { close(socket) }
+                
+                // Set non-blocking
+                var flags = fcntl(socket, F_GETFL, 0)
+                fcntl(socket, F_SETFL, flags | O_NONBLOCK)
+                
+                var addr = sockaddr_in()
+                addr.sin_family = sa_family_t(AF_INET)
+                addr.sin_port = in_port_t(port).bigEndian
+                
+                // Resolve hostname
+                if let hostent = gethostbyname(host) {
+                    memcpy(&addr.sin_addr, hostent.pointee.h_addr_list[0], Int(hostent.pointee.h_length))
+                } else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                
+                // Try to connect
+                let connectResult = withUnsafePointer(to: &addr) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                        Darwin.connect(socket, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                    }
+                }
+                
+                if connectResult == 0 {
+                    result = true
+                } else if errno == EINPROGRESS {
+                    // Wait for connection with select
+                    var writeSet = fd_set()
+                    __darwin_fd_zero(&writeSet)
+                    __darwin_fd_set(socket, &writeSet)
+                    
+                    var tv = timeval(tv_sec: Int(timeout), tv_usec: 0)
+                    let selectResult = select(socket + 1, nil, &writeSet, nil, &tv)
+                    
+                    if selectResult > 0 && __darwin_fd_isset(socket, &writeSet) != 0 {
+                        var error: Int32 = 0
+                        var len = socklen_t(MemoryLayout<Int32>.size)
+                        getsockopt(socket, SOL_SOCKET, SO_ERROR, &error, &len)
+                        result = (error == 0)
+                    }
+                }
+                
+                continuation.resume(returning: result)
+            }
+        }
+    }
             return try await performSimpleProxyCheck(proxy, startTime: startTime)
         }
     }

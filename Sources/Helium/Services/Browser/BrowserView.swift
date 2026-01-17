@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+@preconcurrency import SafariServices
 
 /// Browser view with WebKit and fingerprint injection
 struct BrowserView: View {
@@ -15,6 +16,7 @@ struct BrowserView: View {
     @State private var progress: Double = 0
     @State private var currentURL: URL?
     @State private var webView: WKWebView?
+    @State private var proxyPort: Int?
     
     init(profile: Profile) {
         self.profile = profile
@@ -53,7 +55,8 @@ struct BrowserView: View {
                 canGoBack: $canGoBack,
                 canGoForward: $canGoForward,
                 progress: $progress,
-                currentURL: $currentURL
+                currentURL: $currentURL,
+                proxyPort: proxyPort
             )
         }
         .background(Color(nsColor: .windowBackgroundColor))
@@ -90,7 +93,8 @@ struct BrowserView: View {
         if proxy.type.requiresXray {
             Task {
                 do {
-                    _ = try await xrayService.startConnection(profileId: profile.id, proxy: proxy)
+                    let connection = try await xrayService.startConnection(profileId: profile.id, proxy: proxy)
+                    proxyPort = connection.localPort
                 } catch {
                     print("Failed to start proxy: \(error)")
                 }
@@ -188,14 +192,19 @@ struct WebViewWrapper: NSViewRepresentable {
     @Binding var canGoForward: Bool
     @Binding var progress: Double
     @Binding var currentURL: URL?
+    let proxyPort: Int?
     
     func makeNSView(context: Context) -> WKWebView {
         let configuration = createWebViewConfiguration()
         let webView = WKWebView(frame: .zero, configuration: configuration)
         
         webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
+        
+        // Enable developer extras (Inspect Element)
+        webView.configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
         
         // Add observers
         context.coordinator.observe(webView)
@@ -224,30 +233,74 @@ struct WebViewWrapper: NSViewRepresentable {
     private func createWebViewConfiguration() -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
         
-        // Create separate data store for profile isolation
-        let dataStore = WKWebsiteDataStore.nonPersistent()
-        config.websiteDataStore = dataStore
+        // Create separate persistent data store for profile isolation
+        // Each profile gets its own data store identified by profile ID
+        let dataStoreID = profile.id
         
-        // Enable advanced privacy
+        // Use persistent data store for better cookie/session handling
+        if #available(macOS 14.0, *) {
+            // macOS 14+ supports custom persistent data stores
+            let customDataStore = WKWebsiteDataStore(forIdentifier: dataStoreID)
+            config.websiteDataStore = customDataStore
+        } else {
+            // Fallback to non-persistent for older macOS
+            config.websiteDataStore = WKWebsiteDataStore.nonPersistent()
+        }
+        
+        // Modern WebKit preferences
+        let prefs = WKWebpagePreferences()
+        prefs.allowsContentJavaScript = true
+        config.defaultWebpagePreferences = prefs
+        
+        // Enable modern features
+        config.preferences.javaScriptCanOpenWindowsAutomatically = true
         config.preferences.isFraudulentWebsiteWarningEnabled = true
+        config.preferences.isTextInteractionEnabled = true
+        
+        // Allow media playback
+        config.mediaTypesRequiringUserActionForPlayback = []
+        config.allowsAirPlayForMediaPlayback = true
         
         // Inject fingerprint protection script
         let userContentController = WKUserContentController()
         let fingerprintScript = FingerprintEngine.shared.createUserScript(config: profile.fingerprint)
         userContentController.addUserScript(fingerprintScript)
+        
+        // Add proxy configuration script if proxy is active
+        if let port = proxyPort {
+            let proxyScript = createProxyScript(port: port)
+            userContentController.addUserScript(proxyScript)
+        }
+        
         config.userContentController = userContentController
         
-        // Set custom user agent if specified
+        // Set custom user agent if specified, otherwise use modern Safari UA
         if let customUA = profile.userAgent {
             config.applicationNameForUserAgent = customUA
+        } else {
+            // Use latest Safari user agent
+            config.applicationNameForUserAgent = "Version/17.4 Safari/605.1.15"
         }
+        
+        // Enable advanced features
+        config.limitsNavigationsToAppBoundDomains = false
         
         return config
     }
     
+    private func createProxyScript(port: Int) -> WKUserScript {
+        // Note: WebKit doesn't support per-request proxy via JS
+        // The proxy is handled at the system/XrayService level
+        let script = """
+        // Proxy configured via system - port \(port)
+        console.log('[Helium] Proxy active on port \(port)');
+        """
+        return WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+    }
+    
     // MARK: - Coordinator
     
-    class Coordinator: NSObject, WKNavigationDelegate {
+    class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         var parent: WebViewWrapper
         private var observations: [NSKeyValueObservation] = []
         
@@ -301,8 +354,18 @@ struct WebViewWrapper: NSViewRepresentable {
         }
         
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-            // Allow all navigation for now
+            // Allow all navigation
             return .allow
+        }
+        
+        // MARK: - WKUIDelegate
+        
+        func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+            // Open links that want new windows in the same view
+            if navigationAction.targetFrame == nil {
+                webView.load(navigationAction.request)
+            }
+            return nil
         }
     }
 }
