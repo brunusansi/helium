@@ -83,7 +83,6 @@ Create unlimited isolated browser profiles, each with its own:
 | **Ticket Resale** | Multi-account ticket purchasing |
 | **Web Scraping** | Rotate fingerprints to avoid detection |
 | **Privacy & Anonymity** | Protect your digital identity |
-| **Cloud Providers** | Advanced bypass for Azure, GCP, AWS, Linode, Akamai |
 
 ---
 
