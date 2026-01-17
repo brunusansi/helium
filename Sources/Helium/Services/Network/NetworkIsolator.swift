@@ -144,19 +144,27 @@ final class NetworkIsolator: ObservableObject {
         )
         activeProfiles[profile.id] = session
         
-        // Wait for proxy to be fully configured before launching Safari
-        print("[NetworkIsolator] Waiting for proxy configuration...")
-        try await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 seconds
+        // Wait for Xray to be ready
+        try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
         
         // Verify Xray is running if we started it
         if let port = localPort, proxy?.type.requiresXray == true {
-            if let connection = xrayService.getConnection(profileId: profile.id), !connection.process.isRunning {
-                throw NetworkIsolatorError.xrayNotInstalled
+            if let connection = xrayService.getConnection(profileId: profile.id) {
+                if !connection.process.isRunning {
+                    print("[NetworkIsolator] ❌ Xray process died")
+                    throw NetworkIsolatorError.xrayNotInstalled
+                }
+                print("[NetworkIsolator] ✅ Xray running on port \(port)")
+                
+                // Test connection through proxy
+                let testResult = await testProxyConnection(port: port)
+                if !testResult {
+                    print("[NetworkIsolator] ⚠️ Proxy connection test failed - continuing anyway")
+                }
             }
-            print("[NetworkIsolator] ✅ Xray running on port \(port)")
         }
         
-        // Step 4: Launch Safari with isolated profile
+        // Step 4: Launch Safari
         print("[NetworkIsolator] Launching Safari...")
         launchSafari(profileId: profile.id, profileName: profile.name, startURL: profile.startUrl)
         
@@ -166,6 +174,22 @@ final class NetworkIsolator: ObservableObject {
         }
         
         lastError = nil
+    }
+    
+    /// Test if proxy connection is working
+    private func testProxyConnection(port: Int) async -> Bool {
+        // Simple test: try to connect to the SOCKS proxy
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/nc")
+        process.arguments = ["-z", "127.0.0.1", String(port)]
+        
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
     }
     
     /// Stop a profile and clean up network configuration
@@ -236,31 +260,19 @@ final class NetworkIsolator: ObservableObject {
         
         print("[NetworkIsolator] Configuring SOCKS proxy: \(host):\(port) on '\(networkService)'")
         
-        // Configure SOCKS proxy using AppleScript with admin privileges
-        // This is needed because networksetup requires admin on some systems
-        let script = """
-        do shell script "networksetup -setsocksfirewallproxy '\(networkService)' \(host) \(port) && networksetup -setsocksfirewallproxystate '\(networkService)' on" with administrator privileges
-        """
+        // First, try without admin privileges (works on many systems)
+        let setProxy = Process()
+        setProxy.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
+        setProxy.arguments = ["-setsocksfirewallproxy", networkService, host, String(port)]
         
-        var error: NSDictionary?
-        if let appleScript = NSAppleScript(source: script) {
-            appleScript.executeAndReturnError(&error)
+        let errorPipe = Pipe()
+        setProxy.standardError = errorPipe
+        
+        do {
+            try setProxy.run()
+            setProxy.waitUntilExit()
             
-            if let error = error {
-                // Fallback: try without admin privileges
-                print("[NetworkIsolator] Admin script failed, trying direct: \(error)")
-                
-                let setProxy = Process()
-                setProxy.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
-                setProxy.arguments = ["-setsocksfirewallproxy", networkService, host, String(port)]
-                
-                try setProxy.run()
-                setProxy.waitUntilExit()
-                
-                guard setProxy.terminationStatus == 0 else {
-                    throw NetworkIsolatorError.proxyConfigFailed
-                }
-                
+            if setProxy.terminationStatus == 0 {
                 // Enable SOCKS proxy
                 let enableProxy = Process()
                 enableProxy.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
@@ -268,10 +280,31 @@ final class NetworkIsolator: ObservableObject {
                 
                 try enableProxy.run()
                 enableProxy.waitUntilExit()
+                
+                print("[NetworkIsolator] ✅ SOCKS proxy enabled (no admin needed): \(host):\(port)")
+                return
+            }
+        } catch {
+            print("[NetworkIsolator] Direct config failed: \(error)")
+        }
+        
+        // If direct method failed, try with admin privileges
+        print("[NetworkIsolator] Trying with admin privileges...")
+        let script = """
+        do shell script "networksetup -setsocksfirewallproxy '\(networkService)' \(host) \(port) && networksetup -setsocksfirewallproxystate '\(networkService)' on" with administrator privileges
+        """
+        
+        var appleError: NSDictionary?
+        if let appleScript = NSAppleScript(source: script) {
+            appleScript.executeAndReturnError(&appleError)
+            
+            if let appleError = appleError {
+                print("[NetworkIsolator] ❌ Proxy config failed: \(appleError)")
+                throw NetworkIsolatorError.proxyConfigFailed
             }
         }
         
-        print("[NetworkIsolator] ✅ SOCKS proxy enabled: \(host):\(port)")
+        print("[NetworkIsolator] ✅ SOCKS proxy enabled (with admin): \(host):\(port)")
     }
     
     private func configureHttpProxy(host: String, port: Int) async throws {

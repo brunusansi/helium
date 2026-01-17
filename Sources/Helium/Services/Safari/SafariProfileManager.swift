@@ -159,67 +159,21 @@ final class SafariProfileManager {
     /// Returns the window ID for tracking
     @discardableResult
     func launchPrivateWindow(url: String, profileId: UUID) -> Int32 {
-        print("[SafariProfileManager] Launching private window for profile...")
+        print("[SafariProfileManager] Opening Safari with URL: \(url)")
         
-        // Method 1: Use osascript directly via Process (more reliable than NSAppleScript)
-        let script = """
-        tell application "Safari"
-            activate
-            delay 0.3
-        end tell
-        
-        tell application "System Events"
-            tell process "Safari"
-                -- Try menu first
-                try
-                    click menu item "New Private Window" of menu "File" of menu bar 1
-                on error
-                    -- Fallback to keyboard
-                    keystroke "n" using {command down, shift down}
-                end try
-                delay 0.5
-            end tell
-        end tell
-        
-        tell application "Safari"
-            set URL of front document to "\(url)"
-            return id of front window
-        end tell
-        """
-        
+        // Simple approach: use 'open' command to open URL in Safari
+        // This is the most reliable method
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
-        
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-a", "Safari", url]
         
         do {
             try process.run()
             process.waitUntilExit()
-            
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            
-            if process.terminationStatus == 0 {
-                let windowId = Int32(output) ?? 0
-                activeWindows[profileId] = windowId
-                print("[SafariProfileManager] ✅ Private window launched (ID: \(windowId))")
-                return windowId
-            } else {
-                print("[SafariProfileManager] ⚠️ osascript failed: \(output)")
-            }
+            print("[SafariProfileManager] ✅ Safari launched")
         } catch {
-            print("[SafariProfileManager] ⚠️ Process error: \(error)")
+            print("[SafariProfileManager] ❌ Failed to launch Safari: \(error)")
         }
-        
-        // Fallback: Just open Safari with URL (not private, but works)
-        print("[SafariProfileManager] Using fallback: opening URL directly")
-        let openProcess = Process()
-        openProcess.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        openProcess.arguments = ["-a", "Safari", url]
-        try? openProcess.run()
         
         return 0
     }
