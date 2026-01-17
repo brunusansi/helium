@@ -108,18 +108,89 @@ jobs:
           </plist>
           EOF
           
+          # Create Resources directory
+          mkdir -p Helium.app/Contents/Resources
+          
+          # Create app icon using Python + Pillow
+          pip3 install Pillow --quiet 2>/dev/null || true
+          
+          python3 << 'ICON_SCRIPT' || echo "Icon generation skipped"
+          from PIL import Image, ImageDraw, ImageFont
+          import os
+          
+          sizes = [16, 32, 128, 256, 512]
+          iconset_path = "Helium.iconset"
+          os.makedirs(iconset_path, exist_ok=True)
+          
+          for size in sizes:
+              img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+              draw = ImageDraw.Draw(img)
+              
+              # Dark rounded background
+              radius = size // 5
+              draw.rounded_rectangle([(0, 0), (size-1, size-1)], radius=radius, fill=(30, 32, 40, 255))
+              
+              # "He" text (Helium)
+              try:
+                  font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", size // 2)
+              except:
+                  font = ImageFont.load_default()
+              
+              bbox = draw.textbbox((0, 0), "He", font=font)
+              tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+              draw.text(((size - tw) // 2, (size - th) // 2 - size // 10), "He", font=font, fill=(80, 180, 255, 255))
+              
+              img.save(f"{iconset_path}/icon_{size}x{size}.png")
+              # @2x versions
+              img_2x = img.resize((size * 2, size * 2), Image.LANCZOS)
+              img_2x.save(f"{iconset_path}/icon_{size}x{size}@2x.png")
+          
+          print("Icon created successfully")
+          ICON_SCRIPT
+          
+          # Convert iconset to icns
+          if [ -d "Helium.iconset" ]; then
+            iconutil -c icns Helium.iconset -o Helium.app/Contents/Resources/AppIcon.icns 2>/dev/null || true
+            rm -rf Helium.iconset
+          fi
+          
           # Sign the app (ad-hoc for now)
           codesign --force --deep --sign - Helium.app
 
       - name: Create DMG
         run: |
-          # Create DMG folder with Applications shortcut
+          # Install create-dmg for professional DMG creation
+          brew install create-dmg || true
+          
+          # Create DMG folder
           mkdir -p dmg_contents
           cp -R Helium.app dmg_contents/
-          ln -s /Applications dmg_contents/Applications
           
-          # Create DMG with Applications link for drag-and-drop install
-          hdiutil create -volname "Helium" -srcfolder dmg_contents -ov -format UDZO Helium-${{ matrix.arch }}.dmg
+          # Wait for filesystem sync
+          sleep 2
+          
+          # Try create-dmg for professional look with app-drop-link
+          if command -v create-dmg &> /dev/null; then
+            create-dmg \
+              --volname "Helium" \
+              --window-pos 200 120 \
+              --window-size 600 400 \
+              --icon-size 100 \
+              --icon "Helium.app" 150 185 \
+              --hide-extension "Helium.app" \
+              --app-drop-link 450 185 \
+              --no-internet-enable \
+              "Helium-${{ matrix.arch }}.dmg" \
+              "dmg_contents/" || {
+                # Fallback: manual DMG with Applications link
+                ln -s /Applications dmg_contents/Applications
+                hdiutil create -volname "Helium" -srcfolder dmg_contents -ov -format UDZO Helium-${{ matrix.arch }}.dmg
+              }
+          else
+            # Fallback without create-dmg
+            ln -s /Applications dmg_contents/Applications
+            hdiutil create -volname "Helium" -srcfolder dmg_contents -ov -format UDZO Helium-${{ matrix.arch }}.dmg
+          fi
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
