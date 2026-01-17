@@ -115,7 +115,7 @@ final class TunManager: ObservableObject {
         
         // Start tun2socks with sudo (requires admin password)
         // Using AppleScript to request admin privileges
-        let tun2socksPath = binaryPath?.path ?? ""
+        let tun2socksPath = binaryPath.path
         let args = "-device \(tunDevice) -proxy socks5://127.0.0.1:\(socksPort) -loglevel warn"
         
         // Create a shell script to run tun2socks with sudo
