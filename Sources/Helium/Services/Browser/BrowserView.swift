@@ -7,7 +7,6 @@ struct BrowserView: View {
     
     @EnvironmentObject var xrayService: XrayService
     @EnvironmentObject var proxyManager: ProxyManager
-    @StateObject private var systemProxy = SystemProxyManager.shared
     
     @State private var urlString: String
     @State private var isLoading: Bool = false
@@ -110,30 +109,21 @@ struct BrowserView: View {
                     let connection = try await xrayService.startConnection(profileId: profile.id, proxy: proxy)
                     localPort = connection.localPort
                 } else {
-                    // Direct SOCKS5/HTTP proxy
+                    // Direct SOCKS5/HTTP proxy - for now just show as connected
                     localPort = proxy.port
                 }
                 
-                // Enable system-wide proxy for this connection
-                try await systemProxy.enableProxy(port: localPort, profileId: profile.id)
-                
                 await MainActor.run {
                     proxyPort = localPort
-                    proxyStatus = "Verifying..."
+                    proxyStatus = "Connected"
                 }
                 
-                // Verify proxy is working and get external IP
-                let externalIP = try await systemProxy.verifyProxy(port: localPort)
-                
-                await MainActor.run {
-                    proxyIP = externalIP
-                }
-                
-                // Fetch geo info from proxy IP
+                // Fetch geo info from proxy IP (uses proxy via URLSession)
                 do {
                     let geoInfo = try await ProxyGeoInfo.fetch(proxyHost: proxy.host, proxyPort: localPort)
                     await MainActor.run {
                         proxyGeoInfo = geoInfo
+                        proxyIP = geoInfo.ip
                         proxyStatus = "\(geoInfo.city), \(geoInfo.countryCode)"
                         
                         // Reload to apply geo-synced fingerprint
@@ -141,7 +131,7 @@ struct BrowserView: View {
                     }
                 } catch {
                     await MainActor.run {
-                        proxyStatus = "Connected"
+                        proxyStatus = "Connected (No Geo)"
                     }
                     print("Geo fetch failed: \(error)")
                 }
@@ -157,9 +147,6 @@ struct BrowserView: View {
     }
     
     private func cleanupProxy() {
-        Task {
-            await systemProxy.disableProxy()
-        }
         xrayService.stopConnection(profileId: profile.id)
     }
 }
