@@ -11,7 +11,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/brunusansi/helium?style=social)](https://github.com/brunusansi/helium)
 
-[**Download**](https://github.com/brunusansi/helium/releases) · [**Documentation**](docs/)
+[**Download**](https://github.com/brunusansi/helium/releases)
 
 </div>
 
@@ -313,7 +313,5 @@ Helium is designed for legitimate privacy protection, web development testing, a
 <div align="center">
 
 **Built with ❤️ for the privacy-conscious community**
-
-[⬆ Back to top](#helium)
 
 </div>
