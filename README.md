@@ -11,7 +11,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/brunusansi/helium?style=social)](https://github.com/brunusansi/helium)
 
-[**Download**](https://github.com/brunusansi/helium/releases) · [**Documentation**](docs/) · [**Discord**](https://discord.gg/helium)
+[**Download**](https://github.com/brunusansi/helium/releases) · [**Documentation**](docs/)
 
 <img src="docs/assets/screenshot.png" width="800" alt="Helium Screenshot">
 
