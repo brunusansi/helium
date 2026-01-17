@@ -1,6 +1,6 @@
 <div align="center">
 
-# <img src="docs/assets/helium-icon.png" width="40" height="40" alt="Helium"> Helium
+# ⚛️ Helium
 
 ### The Open Source Anti-Detect Browser
 
@@ -12,8 +12,6 @@
 [![GitHub Stars](https://img.shields.io/github/stars/brunusansi/helium?style=social)](https://github.com/brunusansi/helium)
 
 [**Download**](https://github.com/brunusansi/helium/releases) · [**Documentation**](docs/)
-
-<img src="docs/assets/screenshot.png" width="800" alt="Helium Screenshot">
 
 </div>
 
