@@ -94,9 +94,13 @@ final class FingerprintTests: XCTestCase {
         XCTAssertGreaterThan(fp1.screenWidth, 0)
         XCTAssertGreaterThan(fp1.screenHeight, 0)
         
-        // Canvas noise should be in valid range
-        XCTAssertGreaterThan(fp1.canvasNoise, 0)
-        XCTAssertLessThan(fp1.canvasNoise, 0.01)
+        // Canvas noise should be disabled (0.0) to avoid detection
+        XCTAssertEqual(fp1.canvasNoise, 0.0)
+        XCTAssertEqual(fp1.audioNoise, 0.0)
+        
+        // Timezone and geolocation should match proxy by default
+        XCTAssertEqual(fp1.timezone, .matchProxy)
+        XCTAssertEqual(fp1.geolocation, .matchProxy)
     }
     
     func testFingerprintDefaults() {

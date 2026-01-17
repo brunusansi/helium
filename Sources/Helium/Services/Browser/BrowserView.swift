@@ -298,9 +298,7 @@ struct WebViewWrapper: NSViewRepresentable {
         webView.allowsMagnification = true
         
         // Enable developer extras (Inspect Element)
-        if let prefs = webView.configuration.preferences as? WKPreferences {
-            prefs.setValue(true, forKey: "developerExtrasEnabled")
-        }
+        webView.configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
         
         // Add observers
         context.coordinator.observe(webView)
