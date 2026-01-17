@@ -144,6 +144,9 @@ final class NetworkIsolator: ObservableObject {
         )
         activeProfiles[profile.id] = session
         
+        // Wait a moment for proxy to be fully configured
+        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+        
         // Step 4: Launch Safari with isolated profile
         launchSafari(profileId: profile.id, profileName: profile.name, startURL: profile.startUrl)
         
@@ -158,6 +161,9 @@ final class NetworkIsolator: ObservableObject {
     /// Stop a profile and clean up network configuration
     func stopProfile(profileId: UUID) async {
         guard let session = activeProfiles[profileId] else { return }
+        
+        // Close Safari window for this profile
+        safariProfileManager.closeSafariForProfile(profileId: profileId)
         
         // Restore timezone if this was the last profile with timezone override
         let profilesWithTimezone = activeProfiles.values.filter { $0.timezoneApplied != nil }
@@ -201,7 +207,8 @@ final class NetworkIsolator: ObservableObject {
     private func launchSafari(profileId: UUID, profileName: String, startURL: String, usePrivate: Bool = true) {
         if usePrivate {
             // Use private window for complete session isolation (separate cookies, history)
-            safariProfileManager.launchPrivateWindow(url: startURL)
+            let windowId = safariProfileManager.launchPrivateWindow(url: startURL, profileId: profileId)
+            safariProfileManager.registerWindow(profileId: profileId, windowId: windowId)
         } else {
             // Use named Safari profile (Safari 17+)
             let safariProfileName = safariProfileManager.getSafariProfileName(for: profileId, name: profileName)

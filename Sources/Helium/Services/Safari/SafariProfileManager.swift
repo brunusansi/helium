@@ -156,36 +156,87 @@ final class SafariProfileManager {
     
     /// Launch Safari using Private Browsing for complete session isolation
     /// Each private window has completely isolated cookies/storage
-    func launchPrivateWindow(url: String) {
+    /// Returns the window ID for tracking
+    @discardableResult
+    func launchPrivateWindow(url: String, profileId: UUID) -> Int32 {
         let script = """
         tell application "Safari"
             activate
             
-            -- Open new private window
+            -- Create new private window using menu
             tell application "System Events"
                 tell process "Safari"
-                    -- Use keyboard shortcut for new private window
+                    -- Use keyboard shortcut for new private window (Cmd+Shift+N)
                     keystroke "n" using {command down, shift down}
-                    delay 0.5
+                    delay 0.8
                 end tell
             end tell
             
-            -- Set URL in the new window
+            -- Set URL in the front window
             set URL of front document to "\(url)"
+            
+            -- Get window ID for tracking
+            return id of front window
+        end tell
+        """
+        
+        var error: NSDictionary?
+        if let appleScript = NSAppleScript(source: script) {
+            let result = appleScript.executeAndReturnError(&error)
+            if let error = error {
+                print("[SafariProfileManager] Private window error: \(error)")
+                
+                // Fallback: Create new window (not ideal but works)
+                let fallbackScript = """
+                tell application "Safari"
+                    activate
+                    make new document with properties {URL:"\(url)"}
+                    return id of front window
+                end tell
+                """
+                if let fallback = NSAppleScript(source: fallbackScript) {
+                    let fallbackResult = fallback.executeAndReturnError(nil)
+                    return fallbackResult.int32Value
+                }
+                return 0
+            }
+            return result.int32Value
+        }
+        return 0
+    }
+    
+    /// Close Safari window by ID
+    func closeSafariWindow(windowId: Int32) {
+        guard windowId > 0 else { return }
+        
+        let script = """
+        tell application "Safari"
+            try
+                close (first window whose id is \(windowId))
+            end try
         end tell
         """
         
         var error: NSDictionary?
         if let appleScript = NSAppleScript(source: script) {
             appleScript.executeAndReturnError(&error)
-            if let error = error {
-                print("[SafariProfileManager] Private window error: \(error)")
-                // Fallback: just open URL normally
-                if let urlObj = URL(string: url) {
-                    NSWorkspace.shared.open(urlObj)
-                }
-            }
         }
+    }
+    
+    /// Close Safari window by profile ID (looks up stored window ID)
+    func closeSafariForProfile(profileId: UUID) {
+        if let windowId = activeWindows[profileId] {
+            closeSafariWindow(windowId: windowId)
+            activeWindows.removeValue(forKey: profileId)
+        }
+    }
+    
+    /// Track active Safari windows per profile
+    private var activeWindows: [UUID: Int32] = [:]
+    
+    /// Register window for a profile
+    func registerWindow(profileId: UUID, windowId: Int32) {
+        activeWindows[profileId] = windowId
     }
     
     // MARK: - Persistence
