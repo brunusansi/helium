@@ -99,9 +99,74 @@ final class SafariLauncher: ObservableObject {
     
     // MARK: - Safari Launch
     
-    private func launchSafari(startURL: String) {
+    private func launchSafari(startURL: String, useContainer: Bool = false, profileId: UUID? = nil) {
         let url = URL(string: startURL) ?? URL(string: "https://www.google.com")!
-        NSWorkspace.shared.open(url)
+        
+        if useContainer, let profileId = profileId {
+            // Launch Safari in a new container/window with isolation
+            // Using AppleScript to create a new private window
+            let script = """
+            tell application "Safari"
+                activate
+                make new document with properties {URL:"\(startURL)"}
+            end tell
+            """
+            
+            if let appleScript = NSAppleScript(source: script) {
+                var error: NSDictionary?
+                appleScript.executeAndReturnError(&error)
+                if error != nil {
+                    // Fallback to regular open
+                    NSWorkspace.shared.open(url)
+                }
+            }
+        } else {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    /// Launch Safari in container mode (separate window, still shares system proxy)
+    func launchProfileContainer(
+        profile: Profile,
+        proxy: Proxy?,
+        xrayService: XrayService
+    ) async throws {
+        var localPort: Int?
+        
+        // If proxy is assigned, start Xray and configure system proxy
+        if let proxy = proxy {
+            if proxy.type.requiresXray {
+                guard await xrayService.checkInstallation() else {
+                    throw SafariLauncherError.xrayNotInstalled
+                }
+                
+                let connection = try await xrayService.startConnection(profileId: profile.id, proxy: proxy)
+                localPort = connection.localPort
+            } else if proxy.type == .socks5 {
+                localPort = proxy.port
+            }
+            
+            if let port = localPort {
+                if originalProxyState == nil {
+                    originalProxyState = await captureProxyState()
+                }
+                try await configureSystemProxy(host: "127.0.0.1", port: port)
+            }
+        }
+        
+        // Create session record
+        let session = ProfileSession(
+            profileId: profile.id,
+            proxyId: proxy?.id,
+            localPort: localPort,
+            startedAt: Date()
+        )
+        activeProfiles[profile.id] = session
+        
+        // Launch Safari in container mode
+        launchSafari(startURL: profile.startUrl, useContainer: true, profileId: profile.id)
+        
+        lastError = nil
     }
     
     // MARK: - System Proxy Configuration

@@ -52,6 +52,37 @@ Built-in integration with [Xray-core](https://github.com/XTLS/Xray-core) for adv
 - 🌐 **Smart Routing**: Automatic IPv4/IPv6 dual-stack handling
 - 📋 **URL Import**: Paste `ss://`, `vmess://`, `vless://`, `trojan://` links directly
 
+### 🌐 Network Isolation
+
+**True per-profile network isolation** - the first on macOS!
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| **System Proxy** | Simple, fast. All profiles share system proxy. | Single account or testing |
+| **PAC File** | Auto-configuration script. More flexible. | Mixed traffic routing |
+| **TUN Interface** | Full isolation via [tun2socks](https://github.com/xjasonlyu/tun2socks). Each profile has its own network. | Multi-account with different proxies |
+
+```
+Profile A → TUN10 → Xray:10800 → Proxy A (US IP)
+Profile B → TUN11 → Xray:10801 → Proxy B (UK IP)  
+Profile C → TUN12 → Xray:10802 → Proxy C (DE IP)
+```
+
+**Safari + TUN = Best of both worlds:**
+- ✅ Native Safari fingerprint (undetectable)
+- ✅ Each profile uses different proxy/IP
+- ✅ Complete network isolation
+
+### 🖥️ Browser Engines
+
+Choose the right engine for your needs:
+
+| Engine | Fingerprint Stealth | Proxy Isolation | Best For |
+|--------|---------------------|-----------------|----------|
+| **Safari Native** | ⭐⭐⭐⭐⭐ Excellent | Shared (system) | Maximum stealth, single proxy |
+| **Safari + TUN** | ⭐⭐⭐⭐⭐ Excellent | Per-profile | **Recommended for multi-account** |
+| **Chromium** | ⭐⭐⭐ Good | Per-profile | Chrome compatibility, extensions |
+
 ### 📁 Profile Management
 
 Create unlimited isolated browser profiles, each with its own:

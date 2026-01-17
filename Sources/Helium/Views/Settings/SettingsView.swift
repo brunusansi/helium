@@ -124,9 +124,18 @@ struct NetworkSettingsView: View {
     @AppStorage("autoCheckProxies") private var autoCheckProxies = true
     @AppStorage("checkInterval") private var checkInterval = 30
     
+    private var tunManager: TunManager { TunManager.shared }
+    private var chromiumLauncher: ChromiumLauncher { ChromiumLauncher.shared }
+    
+    @State private var isDownloadingTun = false
+    @State private var tunDownloadError: String?
+    @State private var isTunInstalled = false
+    @State private var isChromiumInstalled = false
+    @State private var chromiumName = ""
+    
     var body: some View {
         Form {
-            Section {
+            Section("Proxy Settings") {
                 LabeledContent("Connection timeout") {
                     Stepper("\(proxyTimeout) seconds", value: $proxyTimeout, in: 5...60, step: 5)
                 }
@@ -140,14 +149,94 @@ struct NetworkSettingsView: View {
                 }
             }
             
-            Section("DNS") {
-                Text("DNS settings are managed per-profile through the proxy configuration.")
+            Section("Network Isolation (tun2socks)") {
+                LabeledContent("Status") {
+                    HStack {
+                        if isDownloadingTun {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                        }
+                        Text(isTunInstalled ? "Installed" : "Not installed")
+                            .foregroundColor(isTunInstalled ? .green : .secondary)
+                    }
+                }
+                
+                if !isTunInstalled {
+                    Button("Download tun2socks") {
+                        downloadTun2Socks()
+                    }
+                    .disabled(isDownloadingTun)
+                    
+                    Text("Required for per-profile network isolation. Each Safari profile will have its own isolated proxy connection.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                if let error = tunDownloadError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+                
+                Link("tun2socks GitHub", destination: URL(string: "https://github.com/xjasonlyu/tun2socks")!)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+            }
+            
+            Section("Browser Engines") {
+                LabeledContent("Safari") {
+                    Text("Built-in")
+                        .foregroundColor(.green)
+                }
+                
+                LabeledContent("Chromium") {
+                    if isChromiumInstalled {
+                        Text(chromiumName)
+                            .foregroundColor(.green)
+                    } else {
+                        Text("Not found")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                if !isChromiumInstalled {
+                    Text("Install Chrome, Brave, Edge, or Vivaldi to use Chromium engine with per-profile proxy isolation.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
         }
         .formStyle(.grouped)
         .navigationTitle("Network")
+        .onAppear {
+            refreshStatus()
+        }
+    }
+    
+    private func refreshStatus() {
+        isTunInstalled = tunManager.isTun2SocksInstalled
+        chromiumLauncher.detectChromium()
+        isChromiumInstalled = chromiumLauncher.isChromiumInstalled
+        chromiumName = chromiumLauncher.detectedBrowserName
+    }
+    
+    private func downloadTun2Socks() {
+        isDownloadingTun = true
+        tunDownloadError = nil
+        
+        Task {
+            do {
+                try await tunManager.downloadTun2Socks()
+                await MainActor.run {
+                    isDownloadingTun = false
+                    isTunInstalled = true
+                }
+            } catch {
+                await MainActor.run {
+                    isDownloadingTun = false
+                    tunDownloadError = error.localizedDescription
+                }
+            }
+        }
     }
 }
 

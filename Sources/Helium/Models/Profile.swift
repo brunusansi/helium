@@ -17,6 +17,12 @@ struct Profile: Identifiable, Codable, Hashable {
     // Proxy binding
     var proxyId: UUID?
     
+    // Browser engine selection
+    var browserEngine: BrowserEngine
+    
+    // Network isolation mode
+    var isolationMode: NetworkIsolationMode
+    
     // Fingerprint configuration
     var fingerprint: FingerprintConfig
     
@@ -36,6 +42,8 @@ struct Profile: Identifiable, Codable, Hashable {
         tagIds: Set<UUID> = [],
         color: ProfileColor = .blue,
         proxyId: UUID? = nil,
+        browserEngine: BrowserEngine = .safariNative,
+        isolationMode: NetworkIsolationMode = .systemProxy,
         fingerprint: FingerprintConfig = .random(),
         startUrl: String = "https://www.google.com",
         extensions: [BrowserExtension] = []
@@ -50,6 +58,8 @@ struct Profile: Identifiable, Codable, Hashable {
         self.tagIds = tagIds
         self.color = color
         self.proxyId = proxyId
+        self.browserEngine = browserEngine
+        self.isolationMode = isolationMode
         self.fingerprint = fingerprint
         self.userAgent = nil
         self.startUrl = startUrl

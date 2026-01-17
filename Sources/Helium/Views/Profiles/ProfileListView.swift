@@ -9,7 +9,8 @@ struct ProfileListView: View {
     
     let folderId: UUID?
     
-    private var safariLauncher: SafariLauncher { SafariLauncher.shared }
+    private var networkIsolator: NetworkIsolator { NetworkIsolator.shared }
+    private var chromiumLauncher: ChromiumLauncher { ChromiumLauncher.shared }
     
     @State private var sortOrder: SortOrder = .name
     @State private var selectedProfile: Profile?
@@ -134,11 +135,24 @@ struct ProfileListView: View {
         
         Task {
             do {
-                try await safariLauncher.launchProfile(
-                    profile: profile,
-                    proxy: proxy,
-                    xrayService: xrayService
-                )
+                switch profile.browserEngine {
+                case .safariNative, .safariContainer:
+                    // Use NetworkIsolator for Safari with proper network isolation
+                    try await networkIsolator.launchProfile(
+                        profile: profile,
+                        proxy: proxy,
+                        isolationMode: profile.isolationMode
+                    )
+                    
+                case .chromium:
+                    // Chromium handles its own proxy via command line args
+                    try await chromiumLauncher.launchProfile(
+                        profile: profile,
+                        proxy: proxy,
+                        xrayService: networkIsolator.xray
+                    )
+                }
+                
                 await MainActor.run {
                     activeProfileIds.insert(profile.id)
                 }
@@ -154,7 +168,13 @@ struct ProfileListView: View {
     
     private func stopProfile(_ profile: Profile) {
         Task {
-            await safariLauncher.stopProfile(profileId: profile.id, xrayService: xrayService)
+            switch profile.browserEngine {
+            case .safariNative, .safariContainer:
+                await networkIsolator.stopProfile(profileId: profile.id)
+            case .chromium:
+                chromiumLauncher.stopProfile(profileId: profile.id, xrayService: networkIsolator.xray)
+            }
+            
             await MainActor.run {
                 activeProfileIds.remove(profile.id)
             }
@@ -478,6 +498,8 @@ struct ProfileEditSheet: View {
     @State private var startUrl: String
     @State private var selectedProxyId: UUID?
     @State private var selectedColor: ProfileColor
+    @State private var selectedBrowserEngine: BrowserEngine
+    @State private var selectedIsolationMode: NetworkIsolationMode
     @State private var fingerprint: FingerprintConfig
     
     init(profile: Profile) {
@@ -487,6 +509,8 @@ struct ProfileEditSheet: View {
         _startUrl = State(initialValue: profile.startUrl)
         _selectedProxyId = State(initialValue: profile.proxyId)
         _selectedColor = State(initialValue: profile.color)
+        _selectedBrowserEngine = State(initialValue: profile.browserEngine)
+        _selectedIsolationMode = State(initialValue: profile.isolationMode)
         _fingerprint = State(initialValue: profile.fingerprint)
     }
     
@@ -531,6 +555,84 @@ struct ProfileEditSheet: View {
                         Text("No Proxy").tag(nil as UUID?)
                         ForEach(proxyManager.proxies) { proxy in
                             Text("\(proxy.name) (\(proxy.type.rawValue))").tag(proxy.id as UUID?)
+                        }
+                    }
+                }
+                
+                Section("Browser Engine") {
+                    Picker("Engine", selection: $selectedBrowserEngine) {
+                        ForEach(BrowserEngine.allCases) { engine in
+                            HStack {
+                                Image(systemName: engine.icon)
+                                Text(engine.displayName)
+                            }
+                            .tag(engine)
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    
+                    // Description of selected engine
+                    Text(selectedBrowserEngine.description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    // Show warning for proxy isolation
+                    if selectedProxyId != nil && !selectedBrowserEngine.supportsPerProfileProxy {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text("This engine uses system proxy. Multiple profiles will share the same proxy.")
+                                .font(.caption)
+                        }
+                    }
+                    
+                    // Fingerprint quality indicator
+                    HStack {
+                        Text("Fingerprint Stealth:")
+                            .font(.caption)
+                        Text(selectedBrowserEngine.fingerprintQuality.rawValue)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(fingerprintColor(selectedBrowserEngine.fingerprintQuality))
+                    }
+                    
+                    HStack {
+                        Text("Data Isolation:")
+                            .font(.caption)
+                        Text(selectedBrowserEngine.dataIsolation.rawValue)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                }
+                
+                // Only show network isolation for Safari engines
+                if selectedBrowserEngine != .chromium {
+                    Section("Network Isolation") {
+                        Picker("Mode", selection: $selectedIsolationMode) {
+                            ForEach(NetworkIsolationMode.allCases) { mode in
+                                Text(mode.displayName).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.radioGroup)
+                        
+                        Text(selectedIsolationMode.description)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        if selectedIsolationMode == .perProfileTun {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                Text("Requires tun2socks. Install from Settings > Network.")
+                                    .font(.caption)
+                            }
+                            
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("Each profile will have its own isolated proxy!")
+                                    .font(.caption)
+                            }
                         }
                     }
                 }
@@ -587,7 +689,7 @@ struct ProfileEditSheet: View {
             }
             .padding()
         }
-        .frame(width: 500, height: 600)
+        .frame(width: 500, height: 700)
     }
     
     private func saveProfile() {
@@ -597,6 +699,8 @@ struct ProfileEditSheet: View {
         updated.startUrl = startUrl
         updated.proxyId = selectedProxyId
         updated.color = selectedColor
+        updated.browserEngine = selectedBrowserEngine
+        updated.isolationMode = selectedIsolationMode
         updated.fingerprint = fingerprint
         profileManager.updateProfile(updated)
         dismiss()
@@ -617,6 +721,14 @@ struct ProfileEditSheet: View {
         case .pink: return .pink
         case .brown: return .brown
         case .gray: return .gray
+        }
+    }
+    
+    private func fingerprintColor(_ quality: FingerprintQuality) -> Color {
+        switch quality {
+        case .excellent: return .green
+        case .good: return .yellow
+        case .moderate: return .orange
         }
     }
 }
