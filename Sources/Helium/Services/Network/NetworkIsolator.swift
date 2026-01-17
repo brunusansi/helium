@@ -92,7 +92,7 @@ final class NetworkIsolator: ObservableObject {
                     timezoneApplied: proxyLocation?.timezone
                 )
                 activeProfiles[profile.id] = session
-                launchSafari(startURL: profile.startUrl)
+                launchSafari(profileId: profile.id, profileName: profile.name, startURL: profile.startUrl)
                 return
             }
         }
@@ -144,8 +144,8 @@ final class NetworkIsolator: ObservableObject {
         )
         activeProfiles[profile.id] = session
         
-        // Step 4: Launch Safari
-        launchSafari(startURL: profile.startUrl)
+        // Step 4: Launch Safari with isolated profile
+        launchSafari(profileId: profile.id, profileName: profile.name, startURL: profile.startUrl)
         
         // Step 5: Warn about WebRTC if not using TUN
         if !webRTCProtected && proxy != nil {
@@ -196,9 +196,17 @@ final class NetworkIsolator: ObservableObject {
     
     // MARK: - Safari Launch
     
-    private func launchSafari(startURL: String) {
-        let url = URL(string: startURL) ?? URL(string: "https://www.google.com")!
-        NSWorkspace.shared.open(url)
+    private let safariProfileManager = SafariProfileManager.shared
+    
+    private func launchSafari(profileId: UUID, profileName: String, startURL: String, usePrivate: Bool = true) {
+        if usePrivate {
+            // Use private window for complete session isolation (separate cookies, history)
+            safariProfileManager.launchPrivateWindow(url: startURL)
+        } else {
+            // Use named Safari profile (Safari 17+)
+            let safariProfileName = safariProfileManager.getSafariProfileName(for: profileId, name: profileName)
+            safariProfileManager.launchWithProfile(profileName: safariProfileName, url: startURL)
+        }
     }
     
     // MARK: - System Proxy Configuration
