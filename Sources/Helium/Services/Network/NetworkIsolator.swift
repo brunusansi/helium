@@ -144,10 +144,20 @@ final class NetworkIsolator: ObservableObject {
         )
         activeProfiles[profile.id] = session
         
-        // Wait a moment for proxy to be fully configured
-        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+        // Wait for proxy to be fully configured before launching Safari
+        print("[NetworkIsolator] Waiting for proxy configuration...")
+        try await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 seconds
+        
+        // Verify Xray is running if we started it
+        if let port = localPort, proxy?.type.requiresXray == true {
+            if let connection = xrayService.getConnection(profileId: profile.id), !connection.process.isRunning {
+                throw NetworkIsolatorError.xrayNotInstalled
+            }
+            print("[NetworkIsolator] ✅ Xray running on port \(port)")
+        }
         
         // Step 4: Launch Safari with isolated profile
+        print("[NetworkIsolator] Launching Safari...")
         launchSafari(profileId: profile.id, profileName: profile.name, startURL: profile.startUrl)
         
         // Step 5: Warn about WebRTC if not using TUN
@@ -224,27 +234,44 @@ final class NetworkIsolator: ObservableObject {
             originalProxyState = await captureProxyState()
         }
         
-        // Configure SOCKS proxy
-        let setProxy = Process()
-        setProxy.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
-        setProxy.arguments = ["-setsocksfirewallproxy", networkService, host, String(port)]
+        print("[NetworkIsolator] Configuring SOCKS proxy: \(host):\(port) on '\(networkService)'")
         
-        try setProxy.run()
-        setProxy.waitUntilExit()
+        // Configure SOCKS proxy using AppleScript with admin privileges
+        // This is needed because networksetup requires admin on some systems
+        let script = """
+        do shell script "networksetup -setsocksfirewallproxy '\(networkService)' \(host) \(port) && networksetup -setsocksfirewallproxystate '\(networkService)' on" with administrator privileges
+        """
         
-        guard setProxy.terminationStatus == 0 else {
-            throw NetworkIsolatorError.proxyConfigFailed
+        var error: NSDictionary?
+        if let appleScript = NSAppleScript(source: script) {
+            appleScript.executeAndReturnError(&error)
+            
+            if let error = error {
+                // Fallback: try without admin privileges
+                print("[NetworkIsolator] Admin script failed, trying direct: \(error)")
+                
+                let setProxy = Process()
+                setProxy.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
+                setProxy.arguments = ["-setsocksfirewallproxy", networkService, host, String(port)]
+                
+                try setProxy.run()
+                setProxy.waitUntilExit()
+                
+                guard setProxy.terminationStatus == 0 else {
+                    throw NetworkIsolatorError.proxyConfigFailed
+                }
+                
+                // Enable SOCKS proxy
+                let enableProxy = Process()
+                enableProxy.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
+                enableProxy.arguments = ["-setsocksfirewallproxystate", networkService, "on"]
+                
+                try enableProxy.run()
+                enableProxy.waitUntilExit()
+            }
         }
         
-        // Enable SOCKS proxy
-        let enableProxy = Process()
-        enableProxy.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
-        enableProxy.arguments = ["-setsocksfirewallproxystate", networkService, "on"]
-        
-        try enableProxy.run()
-        enableProxy.waitUntilExit()
-        
-        print("[NetworkIsolator] SOCKS proxy enabled: \(host):\(port)")
+        print("[NetworkIsolator] ✅ SOCKS proxy enabled: \(host):\(port)")
     }
     
     private func configureHttpProxy(host: String, port: Int) async throws {

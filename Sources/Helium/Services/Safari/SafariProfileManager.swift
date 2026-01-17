@@ -159,48 +159,77 @@ final class SafariProfileManager {
     /// Returns the window ID for tracking
     @discardableResult
     func launchPrivateWindow(url: String, profileId: UUID) -> Int32 {
-        let script = """
+        // First, ensure Safari is running
+        let launchSafari = """
         tell application "Safari"
             activate
-            
-            -- Create new private window using menu
-            tell application "System Events"
-                tell process "Safari"
-                    -- Use keyboard shortcut for new private window (Cmd+Shift+N)
-                    keystroke "n" using {command down, shift down}
-                    delay 0.8
-                end tell
-            end tell
-            
-            -- Set URL in the front window
-            set URL of front document to "\(url)"
-            
-            -- Get window ID for tracking
-            return id of front window
         end tell
         """
         
         var error: NSDictionary?
-        if let appleScript = NSAppleScript(source: script) {
-            let result = appleScript.executeAndReturnError(&error)
-            if let error = error {
-                print("[SafariProfileManager] Private window error: \(error)")
+        if let script = NSAppleScript(source: launchSafari) {
+            script.executeAndReturnError(&error)
+        }
+        
+        // Wait for Safari to be ready
+        Thread.sleep(forTimeInterval: 0.5)
+        
+        // Now create private window using System Events
+        let createPrivateWindow = """
+        tell application "System Events"
+            tell process "Safari"
+                -- Click File menu
+                click menu item "New Private Window" of menu "File" of menu bar 1
+            end tell
+        end tell
+        """
+        
+        error = nil
+        if let script = NSAppleScript(source: createPrivateWindow) {
+            script.executeAndReturnError(&error)
+            if error != nil {
+                print("[SafariProfileManager] Menu click failed, trying keyboard shortcut")
                 
-                // Fallback: Create new window (not ideal but works)
-                let fallbackScript = """
-                tell application "Safari"
-                    activate
-                    make new document with properties {URL:"\(url)"}
-                    return id of front window
+                // Fallback to keyboard shortcut
+                let keyboardShortcut = """
+                tell application "System Events"
+                    tell process "Safari"
+                        keystroke "n" using {command down, shift down}
+                    end tell
                 end tell
                 """
-                if let fallback = NSAppleScript(source: fallbackScript) {
-                    let fallbackResult = fallback.executeAndReturnError(nil)
-                    return fallbackResult.int32Value
+                if let fallbackScript = NSAppleScript(source: keyboardShortcut) {
+                    fallbackScript.executeAndReturnError(nil)
                 }
-                return 0
             }
-            return result.int32Value
+        }
+        
+        // Wait for window to open
+        Thread.sleep(forTimeInterval: 0.8)
+        
+        // Set URL in the new window
+        let setURL = """
+        tell application "Safari"
+            set URL of front document to "\(url)"
+            return id of front window
+        end tell
+        """
+        
+        error = nil
+        if let script = NSAppleScript(source: setURL) {
+            let result = script.executeAndReturnError(&error)
+            if error == nil {
+                let windowId = result.int32Value
+                activeWindows[profileId] = windowId
+                print("[SafariProfileManager] Launched private window \(windowId) for profile")
+                return windowId
+            }
+        }
+        
+        // Last resort fallback - just open URL (not ideal)
+        print("[SafariProfileManager] All methods failed, using fallback")
+        if let urlObj = URL(string: url) {
+            NSWorkspace.shared.open(urlObj)
         }
         return 0
     }
