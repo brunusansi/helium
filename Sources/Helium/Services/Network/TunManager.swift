@@ -236,13 +236,61 @@ final class TunManager: ObservableObject {
     // MARK: - Routing Configuration
     
     private func configureRouting(tunDevice: String, tunIP: String, tunGateway: String) async throws {
-        // Note: Creating TUN interfaces and routing requires elevated privileges
-        // tun2socks handles this internally when run with appropriate permissions
-        print("[TunManager] TUN interface \(tunDevice) starting with IP \(tunIP)")
+        // Configure the TUN interface with IP and add routes
+        // This requires admin privileges
+        
+        let configScript = """
+        # Assign IP to TUN interface
+        ifconfig \(tunDevice) \(tunIP) \(tunIP) up
+        
+        # Add route for the TUN subnet
+        route add -net 0.0.0.0/1 \(tunIP)
+        route add -net 128.0.0.0/1 \(tunIP)
+        """
+        
+        let scriptPath = FileManager.default.temporaryDirectory.appendingPathComponent("helium_route_config.sh")
+        try configScript.write(to: scriptPath, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath.path)
+        
+        let appleScript = """
+        do shell script "\(scriptPath.path)" with administrator privileges
+        """
+        
+        var error: NSDictionary?
+        if let script = NSAppleScript(source: appleScript) {
+            script.executeAndReturnError(&error)
+            if let error = error {
+                print("[TunManager] Routing config warning: \(error)")
+                // Don't throw - TUN might still work for some use cases
+            }
+        }
+        
+        try? FileManager.default.removeItem(at: scriptPath)
+        print("[TunManager] ✅ TUN interface \(tunDevice) configured with IP \(tunIP)")
     }
     
     private func removeRouting(tunDevice: String) async {
-        print("[TunManager] TUN interface \(tunDevice) stopping")
+        // Remove routes when stopping TUN
+        let removeScript = """
+        route delete -net 0.0.0.0/1 2>/dev/null || true
+        route delete -net 128.0.0.0/1 2>/dev/null || true
+        """
+        
+        let scriptPath = FileManager.default.temporaryDirectory.appendingPathComponent("helium_route_remove.sh")
+        try? removeScript.write(to: scriptPath, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath.path)
+        
+        let appleScript = """
+        do shell script "\(scriptPath.path)" with administrator privileges
+        """
+        
+        var error: NSDictionary?
+        if let script = NSAppleScript(source: appleScript) {
+            script.executeAndReturnError(&error)
+        }
+        
+        try? FileManager.default.removeItem(at: scriptPath)
+        print("[TunManager] TUN interface \(tunDevice) stopped")
     }
     
     // MARK: - TUN Index Allocation

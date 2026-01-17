@@ -120,9 +120,9 @@ final class NetworkIsolator: ObservableObject {
             // Create TUN interface
             tunSession = try await tunManager.createTunnel(profileId: profile.id, socksPort: port)
             
-            // Create and set PAC file for this profile
-            let pacFile = tunManager.createPacFile(for: tunSession!)
-            try await tunManager.setSystemPacFile(pacFile, networkService: networkService)
+            // ALSO configure system SOCKS proxy for Safari
+            // Safari doesn't use TUN directly, it uses system proxy
+            try await saveAndConfigureSystemProxy(host: "127.0.0.1", port: port)
             
         case .pacFile:
             // PAC file mode: create PAC that routes to SOCKS

@@ -159,78 +159,68 @@ final class SafariProfileManager {
     /// Returns the window ID for tracking
     @discardableResult
     func launchPrivateWindow(url: String, profileId: UUID) -> Int32 {
-        // First, ensure Safari is running
-        let launchSafari = """
+        print("[SafariProfileManager] Launching private window for profile...")
+        
+        // Method 1: Use osascript directly via Process (more reliable than NSAppleScript)
+        let script = """
         tell application "Safari"
             activate
+            delay 0.3
         end tell
-        """
         
-        var error: NSDictionary?
-        if let script = NSAppleScript(source: launchSafari) {
-            script.executeAndReturnError(&error)
-        }
-        
-        // Wait for Safari to be ready
-        Thread.sleep(forTimeInterval: 0.5)
-        
-        // Now create private window using System Events
-        let createPrivateWindow = """
         tell application "System Events"
             tell process "Safari"
-                -- Click File menu
-                click menu item "New Private Window" of menu "File" of menu bar 1
+                -- Try menu first
+                try
+                    click menu item "New Private Window" of menu "File" of menu bar 1
+                on error
+                    -- Fallback to keyboard
+                    keystroke "n" using {command down, shift down}
+                end try
+                delay 0.5
             end tell
         end tell
-        """
         
-        error = nil
-        if let script = NSAppleScript(source: createPrivateWindow) {
-            script.executeAndReturnError(&error)
-            if error != nil {
-                print("[SafariProfileManager] Menu click failed, trying keyboard shortcut")
-                
-                // Fallback to keyboard shortcut
-                let keyboardShortcut = """
-                tell application "System Events"
-                    tell process "Safari"
-                        keystroke "n" using {command down, shift down}
-                    end tell
-                end tell
-                """
-                if let fallbackScript = NSAppleScript(source: keyboardShortcut) {
-                    fallbackScript.executeAndReturnError(nil)
-                }
-            }
-        }
-        
-        // Wait for window to open
-        Thread.sleep(forTimeInterval: 0.8)
-        
-        // Set URL in the new window
-        let setURL = """
         tell application "Safari"
             set URL of front document to "\(url)"
             return id of front window
         end tell
         """
         
-        error = nil
-        if let script = NSAppleScript(source: setURL) {
-            let result = script.executeAndReturnError(&error)
-            if error == nil {
-                let windowId = result.int32Value
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        
+        do {
+            try process.run()
+            process.waitUntilExit()
+            
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            
+            if process.terminationStatus == 0 {
+                let windowId = Int32(output) ?? 0
                 activeWindows[profileId] = windowId
-                print("[SafariProfileManager] Launched private window \(windowId) for profile")
+                print("[SafariProfileManager] ✅ Private window launched (ID: \(windowId))")
                 return windowId
+            } else {
+                print("[SafariProfileManager] ⚠️ osascript failed: \(output)")
             }
+        } catch {
+            print("[SafariProfileManager] ⚠️ Process error: \(error)")
         }
         
-        // Last resort fallback - just open URL (not ideal)
-        print("[SafariProfileManager] All methods failed, using fallback")
-        if let urlObj = URL(string: url) {
-            NSWorkspace.shared.open(urlObj)
-        }
+        // Fallback: Just open Safari with URL (not private, but works)
+        print("[SafariProfileManager] Using fallback: opening URL directly")
+        let openProcess = Process()
+        openProcess.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        openProcess.arguments = ["-a", "Safari", url]
+        try? openProcess.run()
+        
         return 0
     }
     
