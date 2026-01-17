@@ -219,7 +219,16 @@ jobs:
 
       - name: Create Universal DMG
         run: |
-          hdiutil create -volname "Helium" -srcfolder Helium.app -ov -format UDZO Helium-Universal.dmg
+          # Create DMG folder with Applications shortcut
+          mkdir -p dmg_contents
+          cp -R Helium.app dmg_contents/
+          ln -s /Applications dmg_contents/Applications
+          
+          # Small delay to ensure files are ready
+          sleep 2
+          
+          # Create DMG
+          hdiutil create -volname "Helium" -srcfolder dmg_contents -ov -format UDZO Helium-Universal.dmg
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
