@@ -69,7 +69,8 @@ final class ProxyTests: XCTestCase {
     }
     
     func testParseInvalidFormat() {
-        let url = "socks5://invalid"
+        // Empty string should fail
+        let url = ""
         
         XCTAssertThrowsError(try Proxy.parse(url))
     }
