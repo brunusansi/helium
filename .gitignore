@@ -1,0 +1,79 @@
+# Xcode
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcworkspace/contents.xcworkspacedata
+/*.gcno
+**/xcshareddata/WorkspaceSettings.xcsettings
+
+# Build
+build/
+DerivedData/
+*.build/
+*.swiftpm/
+.build/
+
+# Swift Package Manager
+Packages/
+Package.resolved
+.swiftpm/xcode/package.xcworkspace/
+
+# CocoaPods
+Pods/
+*.xcworkspace
+
+# Carthage
+Carthage/Build/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Code Injection
+.inject*
+
+# OS Generated
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Profiles data (user data - never commit)
+/Profiles/
+*.heliumprofile
+
+# Xray-core binaries (downloaded at runtime)
+Resources/xray-core/
+
+# Secrets
+*.pem
+*.p12
+*.key
+.env
+.env.*
+
+# Archives
+*.zip
+*.tar.gz
+*.dmg
+*.pkg
+
+# Test artifacts
+*.xcresult
+coverage/
+
+# Logs
+*.log
+logs/
