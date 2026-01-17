@@ -205,7 +205,7 @@ struct XraySettingsView: View {
                         .foregroundColor(.secondary)
                 } else {
                     ForEach(Array(xrayService.activeConnections.values), id: \.profileId) { conn in
-                        LabeledContent("Profile \(conn.profileId.uuidString.prefix(8))") {
+                        LabeledContent("Profile \(String(conn.profileId.uuidString.prefix(8)))") {
                             Text("Port \(conn.localPort)")
                                 .foregroundColor(.secondary)
                         }

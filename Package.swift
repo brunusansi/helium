@@ -22,10 +22,7 @@ let package = Package(
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),
             ],
-            path: "Sources/Helium",
-            resources: [
-                .copy("../../Resources")
-            ]
+            path: "Sources/Helium"
         ),
         .testTarget(
             name: "HeliumTests",

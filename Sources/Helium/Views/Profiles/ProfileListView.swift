@@ -120,7 +120,7 @@ struct ProfileListView: View {
     private func launchProfile(_ profile: Profile) {
         profileManager.launchProfile(profile.id)
         // Open browser window
-        if let window = NSApplication.shared.windows.first {
+        if NSApplication.shared.windows.first != nil {
             let hostingController = NSHostingController(
                 rootView: BrowserView(profile: profile)
                     .environmentObject(XrayService())

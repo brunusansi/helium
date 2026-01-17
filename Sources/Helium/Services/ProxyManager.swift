@@ -242,7 +242,10 @@ actor ProxyStorage {
     
     init() {
         encoder.outputFormatting = .prettyPrinted
-        createDataDirectory()
+        // Create data directory synchronously on init
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Helium", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
     
     private func createDataDirectory() {

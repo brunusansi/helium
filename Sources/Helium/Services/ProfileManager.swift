@@ -216,7 +216,10 @@ actor ProfileStorage {
     
     init() {
         encoder.outputFormatting = .prettyPrinted
-        createDataDirectory()
+        // Create data directory synchronously on init
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Helium", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
     
     private func createDataDirectory() {
@@ -257,7 +260,8 @@ actor ProfileStorage {
     }
     
     nonisolated func deleteProfileData(_ profileId: UUID) {
-        let profileDir = dataDirectory.appendingPathComponent("Profiles/\(profileId.uuidString)")
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let profileDir = appSupport.appendingPathComponent("Helium/Profiles/\(profileId.uuidString)")
         try? FileManager.default.removeItem(at: profileDir)
     }
     

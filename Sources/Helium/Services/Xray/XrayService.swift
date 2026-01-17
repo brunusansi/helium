@@ -54,9 +54,12 @@ final class XrayService: ObservableObject {
         let output = String(data: data, encoding: .utf8) ?? ""
         
         // Parse version from output like "Xray 1.8.x (..."
-        if let match = output.firstMatch(of: /Xray (\d+\.\d+\.\d+)/) {
-            version = String(match.1)
-            return String(match.1)
+        let pattern = try? NSRegularExpression(pattern: "Xray (\\d+\\.\\d+\\.\\d+)", options: [])
+        if let match = pattern?.firstMatch(in: output, options: [], range: NSRange(output.startIndex..., in: output)),
+           let versionRange = Range(match.range(at: 1), in: output) {
+            let versionString = String(output[versionRange])
+            version = versionString
+            return versionString
         }
         
         return "Unknown"
@@ -277,7 +280,7 @@ final class XrayService: ObservableObject {
             ]
             
         case .trojan(let settings):
-            var streamSettings: [String: Any] = [
+            let streamSettings: [String: Any] = [
                 "network": "tcp",
                 "security": "tls",
                 "tlsSettings": [

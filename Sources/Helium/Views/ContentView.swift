@@ -261,7 +261,7 @@ struct NewProfileSheet: View {
     }
     
     private func createProfile() {
-        var profile = Profile(
+        let profile = Profile(
             name: name,
             folderId: selectedFolderId,
             proxyId: selectedProxyId,
