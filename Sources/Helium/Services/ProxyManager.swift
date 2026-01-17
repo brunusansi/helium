@@ -451,7 +451,7 @@ final class ProxyManager: ObservableObject {
 
 // MARK: - Proxy Location
 
-struct ProxyLocation: Codable {
+struct ProxyLocation: Codable, Hashable, Equatable {
     let ip: String
     let country: String
     let countryCode: String

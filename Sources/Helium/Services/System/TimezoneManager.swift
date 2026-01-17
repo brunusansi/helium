@@ -66,7 +66,7 @@ final class TimezoneManager: ObservableObject {
         // Run on main thread for AppleScript
         appleScript?.executeAndReturnError(&error)
         
-        if let error = error {
+        if error != nil {
             // Fallback: Try without sudo (works on some systems)
             try await setTimezoneWithoutAdmin(timezone)
         }
