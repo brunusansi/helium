@@ -438,7 +438,7 @@ struct TrojanSettings: Codable, Hashable {
 
 // MARK: - Parse Error
 
-enum ProxyParseError: LocalizedError {
+enum ProxyParseError: LocalizedError, Equatable {
     case unsupportedProtocol
     case invalidBase64
     case invalidFormat
