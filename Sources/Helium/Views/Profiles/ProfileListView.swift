@@ -540,6 +540,7 @@ struct ProfileEditSheet: View {
     @State private var selectedIsolationMode: NetworkIsolationMode
     @State private var selectedTagIds: Set<UUID>
     @State private var fingerprint: FingerprintConfig
+    @State private var selectedFolderId: UUID?
     
     init(profile: Profile) {
         self.profile = profile
@@ -552,6 +553,7 @@ struct ProfileEditSheet: View {
         _selectedIsolationMode = State(initialValue: profile.isolationMode)
         _selectedTagIds = State(initialValue: profile.tagIds)
         _fingerprint = State(initialValue: profile.fingerprint)
+        _selectedFolderId = State(initialValue: profile.folderId)
     }
     
     var body: some View {
@@ -587,6 +589,26 @@ struct ProfileEditSheet: View {
                             }
                             .tag(color)
                         }
+                    }
+                }
+                
+                Section("Folder") {
+                    Picker("Folder", selection: $selectedFolderId) {
+                        Text("No Folder").tag(nil as UUID?)
+                        ForEach(profileManager.folders) { folder in
+                            HStack(spacing: 8) {
+                                Image(systemName: "folder.fill")
+                                    .foregroundColor(.blue)
+                                Text(folder.name)
+                            }
+                            .tag(folder.id as UUID?)
+                        }
+                    }
+                    
+                    if profileManager.folders.isEmpty {
+                        Text("No folders created yet. Create folders in the sidebar.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
                 
@@ -772,6 +794,7 @@ struct ProfileEditSheet: View {
         updated.isolationMode = selectedIsolationMode
         updated.tagIds = selectedTagIds
         updated.fingerprint = fingerprint
+        updated.folderId = selectedFolderId
         profileManager.updateProfile(updated)
         dismiss()
     }

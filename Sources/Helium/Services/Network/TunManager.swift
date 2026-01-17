@@ -120,7 +120,7 @@ final class TunManager: ObservableObject {
         process.arguments = [
             "-device", "utun://\(tunDevice)",
             "-proxy", "socks5://127.0.0.1:\(socksPort)",
-            "-loglevel", "warning"
+            "-loglevel", "warn"
         ]
         
         let outputPipe = Pipe()
