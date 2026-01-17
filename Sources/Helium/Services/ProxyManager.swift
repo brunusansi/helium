@@ -116,6 +116,7 @@ final class ProxyManager: ObservableObject {
             if let loc = location {
                 proxy.country = loc.country
                 proxy.countryCode = loc.countryCode
+                proxy.lastCheckedLocation = loc // Save full location for timezone sync
             }
         } catch {
             proxy.status = .offline

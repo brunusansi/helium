@@ -20,6 +20,7 @@ struct Proxy: Identifiable, Codable, Hashable {
     var status: ProxyStatus
     var country: String?
     var countryCode: String?
+    var lastCheckedLocation: ProxyLocation? // Full location info including timezone
     
     // Tags for organization
     var tagIds: Set<UUID>
@@ -49,6 +50,7 @@ struct Proxy: Identifiable, Codable, Hashable {
         self.status = .unknown
         self.country = nil
         self.countryCode = nil
+        self.lastCheckedLocation = nil
         self.tagIds = tagIds
     }
     

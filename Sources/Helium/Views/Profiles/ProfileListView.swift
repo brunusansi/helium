@@ -138,9 +138,13 @@ struct ProfileListView: View {
                 switch profile.browserEngine {
                 case .safariNative, .safariContainer:
                     // Use NetworkIsolator for Safari with proper network isolation
+                    // Get proxy location for timezone sync
+                    let proxyLocation = proxy?.lastCheckedLocation
+                    
                     try await networkIsolator.launchProfile(
                         profile: profile,
                         proxy: proxy,
+                        proxyLocation: proxyLocation,
                         isolationMode: profile.isolationMode
                     )
                     
@@ -322,12 +326,46 @@ struct ProfileCard: View {
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                 
+                // Timezone indicator
+                if let location = proxy?.lastCheckedLocation, let tz = location.timezone {
+                    Text("🕐 \(tz.components(separatedBy: "/").last ?? tz)")
+                        .font(.caption2)
+                        .foregroundColor(.blue)
+                }
+                
                 Spacer()
                 
                 if let latency = proxy?.lastLatency {
                     Text("\(latency)ms")
                         .font(.caption2)
                         .foregroundColor(.secondary)
+                }
+            }
+            
+            // Protection indicators
+            if isActive {
+                HStack(spacing: 12) {
+                    // WebRTC protection
+                    HStack(spacing: 4) {
+                        Image(systemName: profile.isolationMode == .perProfileTun ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+                            .font(.caption2)
+                            .foregroundColor(profile.isolationMode == .perProfileTun ? .green : .orange)
+                        Text("WebRTC")
+                            .font(.caption2)
+                            .foregroundColor(profile.isolationMode == .perProfileTun ? .green : .orange)
+                    }
+                    
+                    // Timezone sync
+                    if proxy?.lastCheckedLocation?.timezone != nil {
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock.fill")
+                                .font(.caption2)
+                                .foregroundColor(.green)
+                            Text("TZ Sync")
+                                .font(.caption2)
+                                .foregroundColor(.green)
+                        }
+                    }
                 }
             }
             

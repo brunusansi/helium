@@ -6,23 +6,27 @@ import AppKit
 /// This is the main entry point for launching profiles with full network isolation:
 /// 1. Starts Xray-core to convert proxy protocol → SOCKS5
 /// 2. Optionally creates TUN interface for per-profile isolation
-/// 3. Configures system proxy or PAC file
-/// 4. Launches Safari with the configured network
+/// 3. Syncs timezone with proxy location
+/// 4. Configures system proxy or PAC file
+/// 5. Launches Safari with the configured network
 @MainActor
 final class NetworkIsolator: ObservableObject {
     static let shared = NetworkIsolator()
     
     @Published private(set) var activeProfiles: [UUID: IsolatedSession] = [:]
     @Published private(set) var lastError: String?
+    @Published private(set) var webRTCProtected: Bool = false
     
     private let xrayService: XrayService
     private let tunManager: TunManager
+    private let timezoneManager: TimezoneManager
     private let networkService: String
     private var originalProxyState: ProxyConfiguration?
     
     private init() {
         xrayService = XrayService()
         tunManager = TunManager.shared
+        timezoneManager = TimezoneManager.shared
         networkService = Self.getPrimaryNetworkService() ?? "Wi-Fi"
     }
     
@@ -32,18 +36,35 @@ final class NetworkIsolator: ObservableObject {
     /// Get TunManager for external access
     var tun: TunManager { tunManager }
     
+    /// Get TimezoneManager for external access
+    var timezone: TimezoneManager { timezoneManager }
+    
     // MARK: - Profile Launch
     
     /// Launch a Safari profile with network isolation
     /// - Parameters:
     ///   - profile: The profile to launch
     ///   - proxy: Optional proxy configuration
+    ///   - proxyLocation: Proxy location info for timezone sync
     ///   - isolationMode: Network isolation mode
     func launchProfile(
         profile: Profile,
         proxy: Proxy?,
+        proxyLocation: ProxyLocation? = nil,
         isolationMode: NetworkIsolationMode = .systemProxy
     ) async throws {
+        // Step 0: Sync timezone with proxy location if available
+        if let location = proxyLocation, let timezone = location.timezone {
+            do {
+                try await timezoneManager.syncWithProxy(timezone: timezone)
+            } catch {
+                print("[NetworkIsolator] Timezone sync failed (non-fatal): \(error)")
+            }
+        }
+        
+        // Step 0.5: Update WebRTC protection status
+        webRTCProtected = (isolationMode == .perProfileTun && tunManager.isTun2SocksInstalled)
+        
         // Step 1: Start Xray if we have a proxy that requires it
         var localPort: Int?
         
@@ -67,7 +88,8 @@ final class NetworkIsolator: ObservableObject {
                     localPort: nil,
                     isolationMode: isolationMode,
                     tunSession: nil,
-                    startedAt: Date()
+                    startedAt: Date(),
+                    timezoneApplied: proxyLocation?.timezone
                 )
                 activeProfiles[profile.id] = session
                 launchSafari(startURL: profile.startUrl)
@@ -117,12 +139,18 @@ final class NetworkIsolator: ObservableObject {
             localPort: localPort,
             isolationMode: isolationMode,
             tunSession: tunSession,
-            startedAt: Date()
+            startedAt: Date(),
+            timezoneApplied: proxyLocation?.timezone
         )
         activeProfiles[profile.id] = session
         
         // Step 4: Launch Safari
         launchSafari(startURL: profile.startUrl)
+        
+        // Step 5: Warn about WebRTC if not using TUN
+        if !webRTCProtected && proxy != nil {
+            print("[NetworkIsolator] ⚠️ WebRTC not protected - consider using TUN mode")
+        }
         
         lastError = nil
     }
@@ -130,6 +158,12 @@ final class NetworkIsolator: ObservableObject {
     /// Stop a profile and clean up network configuration
     func stopProfile(profileId: UUID) async {
         guard let session = activeProfiles[profileId] else { return }
+        
+        // Restore timezone if this was the last profile with timezone override
+        let profilesWithTimezone = activeProfiles.values.filter { $0.timezoneApplied != nil }
+        if profilesWithTimezone.count == 1 && session.timezoneApplied != nil {
+            await timezoneManager.restore()
+        }
         
         // Stop TUN if used
         if session.tunSession != nil {
@@ -471,6 +505,12 @@ struct IsolatedSession: Identifiable {
     let isolationMode: NetworkIsolationMode
     let tunSession: TunSession?
     let startedAt: Date
+    let timezoneApplied: String? // Timezone that was synced with proxy
+    
+    /// Whether WebRTC is protected (TUN mode active)
+    var isWebRTCProtected: Bool {
+        isolationMode == .perProfileTun && tunSession != nil
+    }
 }
 
 /// Captured proxy configuration for restoration
