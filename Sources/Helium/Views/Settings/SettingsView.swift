@@ -344,94 +344,103 @@ struct AboutView: View {
     @State private var releaseNotes: String?
     
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "atom")
-                .font(.system(size: 64))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.blue, .purple, .pink],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+        ScrollView {
+            VStack(spacing: 16) {
+                Spacer()
+                    .frame(height: 20)
+                
+                Image(systemName: "atom")
+                    .font(.system(size: 56))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.blue, .purple, .pink],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
-                )
-            
-            Text("Helium")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-            
-            Text("Open Source Anti-Detect Browser")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            
-            HStack(spacing: 8) {
-                Text("Version \(currentVersion)")
-                    .font(.caption)
+                
+                Text("Helium")
+                    .font(.title)
+                    .fontWeight(.bold)
+                
+                Text("Open Source Anti-Detect Browser")
+                    .font(.subheadline)
                     .foregroundColor(.secondary)
                 
-                if isCheckingUpdate {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                } else if updateAvailable, let latest = latestVersion {
-                    Text("→ \(latest) available")
+                HStack(spacing: 8) {
+                    Text("Version \(currentVersion)")
                         .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundColor(.green)
-                }
-            }
-            
-            // Update section
-            if updateAvailable, let url = releaseURL {
-                VStack(spacing: 8) {
-                    Button {
-                        NSWorkspace.shared.open(url)
-                    } label: {
-                        Label("Download Update", systemImage: "arrow.down.circle.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
+                        .foregroundColor(.secondary)
                     
-                    if let notes = releaseNotes {
-                        Text(notes)
+                    if isCheckingUpdate {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                    } else if updateAvailable, let latest = latestVersion {
+                        Text("→ \(latest) available")
                             .font(.caption)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(3)
-                            .frame(maxWidth: 300)
+                            .fontWeight(.medium)
+                            .foregroundColor(.green)
                     }
                 }
-            } else {
-                Button {
-                    checkForUpdates()
-                } label: {
-                    Label("Check for Updates", systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.bordered)
-                .disabled(isCheckingUpdate)
-            }
-            
-            Divider()
-                .frame(width: 200)
-            
-            VStack(spacing: 8) {
-                Link("GitHub Repository", destination: URL(string: "https://github.com/brunusansi/helium")!)
-                Link("Report an Issue", destination: URL(string: "https://github.com/brunusansi/helium/issues")!)
-                Link("Documentation", destination: URL(string: "https://github.com/brunusansi/helium/tree/main/docs")!)
-            }
-            .font(.callout)
-            
-            Spacer()
-            
-            VStack(spacing: 4) {
-                Text("Made with ❤️ by the community")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
                 
-                Text("MIT License • 100% Open Source")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                // Update section
+                VStack(spacing: 8) {
+                    if updateAvailable, let url = releaseURL {
+                        Button {
+                            NSWorkspace.shared.open(url)
+                        } label: {
+                            Label("Download Update", systemImage: "arrow.down.circle.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        
+                        if let notes = releaseNotes {
+                            Text(notes)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(4)
+                                .frame(maxWidth: 280)
+                        }
+                    } else {
+                        Button {
+                            checkForUpdates()
+                        } label: {
+                            Label("Check for Updates", systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isCheckingUpdate)
+                    }
+                }
+                .padding(.vertical, 8)
+                
+                Divider()
+                    .frame(width: 180)
+                
+                VStack(spacing: 6) {
+                    Link("GitHub Repository", destination: URL(string: "https://github.com/brunusansi/helium")!)
+                    Link("Report an Issue", destination: URL(string: "https://github.com/brunusansi/helium/issues")!)
+                }
+                .font(.callout)
+                
+                Spacer()
+                    .frame(height: 16)
+                
+                VStack(spacing: 4) {
+                    Text("Made with ❤️ by the community")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Text("MIT License • 100% Open Source")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                    .frame(height: 20)
             }
+            .frame(maxWidth: .infinity)
         }
-        .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(minWidth: 350, minHeight: 400)
         .onAppear {
             loadCurrentVersion()
         }
