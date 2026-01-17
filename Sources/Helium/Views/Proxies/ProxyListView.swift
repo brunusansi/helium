@@ -467,15 +467,15 @@ struct TagsView: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 200)
                 
-                Picker("", selection: $selectedColor) {
+                Picker("Color", selection: $selectedColor) {
                     ForEach(TagColor.allCases, id: \.self) { color in
-                        Circle()
-                            .fill(colorValue(color))
-                            .frame(width: 12, height: 12)
+                        Text(color.rawValue.capitalized)
+                            .foregroundColor(colorValue(color))
                             .tag(color)
                     }
                 }
-                .frame(width: 60)
+                .pickerStyle(.menu)
+                .frame(width: 100)
                 
                 Button("Add") {
                     if !newTagName.isEmpty {

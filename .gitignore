@@ -81,3 +81,4 @@ logs/
 # Internal development files
 AGENTS.md
 .github/copilot-instructions.md
+*.png

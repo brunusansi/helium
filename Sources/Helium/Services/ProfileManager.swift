@@ -51,6 +51,11 @@ final class ProfileManager: ObservableObject {
         return profile
     }
     
+    func addProfile(_ profile: Profile) {
+        profiles.append(profile)
+        Task { await save() }
+    }
+    
     func updateProfile(_ profile: Profile) {
         if let index = profiles.firstIndex(where: { $0.id == profile.id }) {
             profiles[index] = profile
@@ -114,6 +119,13 @@ final class ProfileManager: ObservableObject {
         folders.append(folder)
         Task { await save() }
         return folder
+    }
+    
+    func renameFolder(_ id: UUID, newName: String) {
+        if let index = folders.firstIndex(where: { $0.id == id }) {
+            folders[index].name = newName
+            Task { await save() }
+        }
     }
     
     func updateFolder(_ folder: Folder) {

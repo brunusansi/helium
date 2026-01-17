@@ -57,6 +57,9 @@ struct SidebarView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var profileManager: ProfileManager
     
+    @State private var renamingFolder: Folder?
+    @State private var newFolderName: String = ""
+    
     var body: some View {
         List(selection: $appState.selectedSection) {
             Section {
@@ -99,8 +102,12 @@ struct SidebarView: View {
                 }
                 
                 NavigationLink(value: AppState.SidebarSection.tags) {
-                    Label("Tags", systemImage: "tag.fill")
-                        .foregroundColor(.purple)
+                    Label {
+                        Text("Tags")
+                    } icon: {
+                        Image(systemName: "tag.fill")
+                            .foregroundColor(.purple)
+                    }
                 }
             }
             
@@ -123,7 +130,8 @@ struct SidebarView: View {
                         }
                         .contextMenu {
                             Button("Rename") {
-                                // TODO: Rename folder
+                                newFolderName = folder.name
+                                renamingFolder = folder
                             }
                             Divider()
                             Button("Delete", role: .destructive) {
@@ -136,6 +144,23 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .frame(minWidth: 200)
+        .alert("Rename Folder", isPresented: Binding(
+            get: { renamingFolder != nil },
+            set: { if !$0 { renamingFolder = nil } }
+        )) {
+            TextField("Folder name", text: $newFolderName)
+            Button("Cancel", role: .cancel) {
+                renamingFolder = nil
+            }
+            Button("Rename") {
+                if let folder = renamingFolder, !newFolderName.isEmpty {
+                    profileManager.renameFolder(folder.id, newName: newFolderName)
+                }
+                renamingFolder = nil
+            }
+        } message: {
+            Text("Enter a new name for this folder")
+        }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Menu {
@@ -269,7 +294,7 @@ struct NewProfileSheet: View {
             startUrl: startUrl
         )
         
-        profileManager.updateProfile(profile)
+        profileManager.addProfile(profile)
         dismiss()
     }
 }
