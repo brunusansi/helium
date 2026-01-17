@@ -6,9 +6,10 @@ struct ProfileListView: View {
     @EnvironmentObject var profileManager: ProfileManager
     @EnvironmentObject var proxyManager: ProxyManager
     @EnvironmentObject var xrayService: XrayService
-    @StateObject private var safariLauncher = SafariLauncher.shared
     
     let folderId: UUID?
+    
+    private var safariLauncher: SafariLauncher { SafariLauncher.shared }
     
     @State private var sortOrder: SortOrder = .name
     @State private var selectedProfile: Profile?
@@ -16,6 +17,7 @@ struct ProfileListView: View {
     @State private var hoveredProfileId: UUID?
     @State private var launchError: String?
     @State private var showingLaunchError: Bool = false
+    @State private var activeProfileIds: Set<UUID> = []
     
     init(folderId: UUID? = nil) {
         self.folderId = folderId
@@ -76,6 +78,7 @@ struct ProfileListView: View {
                                 profile: profile,
                                 isSelected: appState.selectedProfileIds.contains(profile.id),
                                 isHovered: hoveredProfileId == profile.id,
+                                isActive: activeProfileIds.contains(profile.id),
                                 proxy: profile.proxyId.flatMap { proxyManager.getProxy($0) },
                                 onLaunch: { launchProfile(profile) },
                                 onStop: { stopProfile(profile) },
@@ -136,6 +139,9 @@ struct ProfileListView: View {
                     proxy: proxy,
                     xrayService: xrayService
                 )
+                await MainActor.run {
+                    activeProfileIds.insert(profile.id)
+                }
                 profileManager.launchProfile(profile.id)
             } catch {
                 await MainActor.run {
@@ -149,6 +155,9 @@ struct ProfileListView: View {
     private func stopProfile(_ profile: Profile) {
         Task {
             await safariLauncher.stopProfile(profileId: profile.id, xrayService: xrayService)
+            await MainActor.run {
+                activeProfileIds.remove(profile.id)
+            }
             profileManager.stopProfile(profile.id)
         }
     }
@@ -251,6 +260,7 @@ struct ProfileCard: View {
     let profile: Profile
     let isSelected: Bool
     let isHovered: Bool
+    let isActive: Bool
     let proxy: Proxy?
     let onLaunch: () -> Void
     let onStop: () -> Void
@@ -274,7 +284,11 @@ struct ProfileCard: View {
                 Spacer()
                 
                 // Status badge
-                StatusBadge(status: profile.status)
+                if isActive {
+                    StatusBadge(status: .running)
+                } else {
+                    StatusBadge(status: .ready)
+                }
             }
             
             // Proxy info
@@ -308,7 +322,7 @@ struct ProfileCard: View {
             
             // Actions
             HStack {
-                if profile.status == .running {
+                if isActive {
                     Button {
                         onStop()
                     } label: {
