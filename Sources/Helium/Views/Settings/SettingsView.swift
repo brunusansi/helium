@@ -208,11 +208,15 @@ struct NetworkSettingsView: View {
         .formStyle(.grouped)
         .navigationTitle("Network")
         .onAppear {
-            refreshStatus()
+            Task { @MainActor in
+                await refreshStatus()
+            }
         }
     }
     
-    private func refreshStatus() {
+    @MainActor
+    private func refreshStatus() async {
+        tunManager.checkInstallation()
         isTunInstalled = tunManager.isTun2SocksInstalled
         chromiumLauncher.detectChromium()
         isChromiumInstalled = chromiumLauncher.isChromiumInstalled
@@ -332,11 +336,24 @@ struct XraySettingsView: View {
 // MARK: - About View
 
 struct AboutView: View {
+    @State private var currentVersion: String = ""
+    @State private var latestVersion: String?
+    @State private var isCheckingUpdate = false
+    @State private var updateAvailable = false
+    @State private var releaseURL: URL?
+    @State private var releaseNotes: String?
+    
     var body: some View {
         VStack(spacing: 20) {
             Image(systemName: "atom")
                 .font(.system(size: 64))
-                .foregroundColor(.accentColor)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.blue, .purple, .pink],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
             
             Text("Helium")
                 .font(.largeTitle)
@@ -346,9 +363,50 @@ struct AboutView: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             
-            Text("Version 1.0.0")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            HStack(spacing: 8) {
+                Text("Version \(currentVersion)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                if isCheckingUpdate {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                } else if updateAvailable, let latest = latestVersion {
+                    Text("→ \(latest) available")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.green)
+                }
+            }
+            
+            // Update section
+            if updateAvailable, let url = releaseURL {
+                VStack(spacing: 8) {
+                    Button {
+                        NSWorkspace.shared.open(url)
+                    } label: {
+                        Label("Download Update", systemImage: "arrow.down.circle.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    
+                    if let notes = releaseNotes {
+                        Text(notes)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+                            .frame(maxWidth: 300)
+                    }
+                }
+            } else {
+                Button {
+                    checkForUpdates()
+                } label: {
+                    Label("Check for Updates", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .disabled(isCheckingUpdate)
+            }
             
             Divider()
                 .frame(width: 200)
@@ -356,21 +414,89 @@ struct AboutView: View {
             VStack(spacing: 8) {
                 Link("GitHub Repository", destination: URL(string: "https://github.com/brunusansi/helium")!)
                 Link("Report an Issue", destination: URL(string: "https://github.com/brunusansi/helium/issues")!)
-                Link("Documentation", destination: URL(string: "https://github.com/brunusansi/helium/wiki")!)
+                Link("Documentation", destination: URL(string: "https://github.com/brunusansi/helium/tree/main/docs")!)
             }
+            .font(.callout)
             
             Spacer()
             
-            Text("Made with ❤️ by the community")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            Text("MIT License")
-                .font(.caption2)
-                .foregroundColor(.secondary)
+            VStack(spacing: 4) {
+                Text("Made with ❤️ by the community")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Text("MIT License • 100% Open Source")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            loadCurrentVersion()
+        }
+    }
+    
+    private func loadCurrentVersion() {
+        if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+            currentVersion = version
+        } else {
+            currentVersion = "1.2.1" // Fallback
+        }
+    }
+    
+    private func checkForUpdates() {
+        isCheckingUpdate = true
+        updateAvailable = false
+        
+        Task {
+            do {
+                let url = URL(string: "https://api.github.com/repos/brunusansi/helium/releases/latest")!
+                let (data, _) = try await URLSession.shared.data(from: url)
+                
+                guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let tagName = json["tag_name"] as? String,
+                      let htmlUrl = json["html_url"] as? String else {
+                    await MainActor.run { isCheckingUpdate = false }
+                    return
+                }
+                
+                let latest = tagName.replacingOccurrences(of: "v", with: "")
+                let body = json["body"] as? String
+                
+                await MainActor.run {
+                    latestVersion = latest
+                    releaseURL = URL(string: htmlUrl)
+                    releaseNotes = body?.components(separatedBy: "\n").first
+                    
+                    // Compare versions
+                    if compareVersions(current: currentVersion, latest: latest) {
+                        updateAvailable = true
+                    }
+                    
+                    isCheckingUpdate = false
+                }
+            } catch {
+                await MainActor.run {
+                    isCheckingUpdate = false
+                }
+            }
+        }
+    }
+    
+    private func compareVersions(current: String, latest: String) -> Bool {
+        let currentParts = current.split(separator: ".").compactMap { Int($0) }
+        let latestParts = latest.split(separator: ".").compactMap { Int($0) }
+        
+        for i in 0..<max(currentParts.count, latestParts.count) {
+            let c = i < currentParts.count ? currentParts[i] : 0
+            let l = i < latestParts.count ? latestParts[i] : 0
+            
+            if l > c { return true }
+            if l < c { return false }
+        }
+        
+        return false
     }
 }
 

@@ -500,6 +500,7 @@ struct ProfileEditSheet: View {
     @State private var selectedColor: ProfileColor
     @State private var selectedBrowserEngine: BrowserEngine
     @State private var selectedIsolationMode: NetworkIsolationMode
+    @State private var selectedTagIds: Set<UUID>
     @State private var fingerprint: FingerprintConfig
     
     init(profile: Profile) {
@@ -511,6 +512,7 @@ struct ProfileEditSheet: View {
         _selectedColor = State(initialValue: profile.color)
         _selectedBrowserEngine = State(initialValue: profile.browserEngine)
         _selectedIsolationMode = State(initialValue: profile.isolationMode)
+        _selectedTagIds = State(initialValue: profile.tagIds)
         _fingerprint = State(initialValue: profile.fingerprint)
     }
     
@@ -546,6 +548,35 @@ struct ProfileEditSheet: View {
                                 Text(color.rawValue.capitalized)
                             }
                             .tag(color)
+                        }
+                    }
+                }
+                
+                Section("Tags") {
+                    if profileManager.tags.isEmpty {
+                        Text("No tags created yet. Create tags in the sidebar.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(profileManager.tags) { tag in
+                            Toggle(isOn: Binding(
+                                get: { selectedTagIds.contains(tag.id) },
+                                set: { isSelected in
+                                    if isSelected {
+                                        selectedTagIds.insert(tag.id)
+                                    } else {
+                                        selectedTagIds.remove(tag.id)
+                                    }
+                                }
+                            )) {
+                                HStack(spacing: 8) {
+                                    Circle()
+                                        .fill(tagColor(tag.color))
+                                        .frame(width: 10, height: 10)
+                                    Text(tag.name)
+                                }
+                            }
+                            .toggleStyle(.checkbox)
                         }
                     }
                 }
@@ -689,7 +720,7 @@ struct ProfileEditSheet: View {
             }
             .padding()
         }
-        .frame(width: 500, height: 700)
+        .frame(width: 500, height: 750)
     }
     
     private func saveProfile() {
@@ -701,6 +732,7 @@ struct ProfileEditSheet: View {
         updated.color = selectedColor
         updated.browserEngine = selectedBrowserEngine
         updated.isolationMode = selectedIsolationMode
+        updated.tagIds = selectedTagIds
         updated.fingerprint = fingerprint
         profileManager.updateProfile(updated)
         dismiss()
@@ -720,6 +752,23 @@ struct ProfileEditSheet: View {
         case .purple: return .purple
         case .pink: return .pink
         case .brown: return .brown
+        case .gray: return .gray
+        }
+    }
+    
+    private func tagColor(_ color: TagColor) -> Color {
+        switch color {
+        case .red: return .red
+        case .orange: return .orange
+        case .yellow: return .yellow
+        case .green: return .green
+        case .mint: return .mint
+        case .teal: return .teal
+        case .cyan: return .cyan
+        case .blue: return .blue
+        case .indigo: return .indigo
+        case .purple: return .purple
+        case .pink: return .pink
         case .gray: return .gray
         }
     }
