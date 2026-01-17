@@ -66,11 +66,11 @@ final class XrayService: ObservableObject {
     }
     
     func downloadXrayCore() async throws {
-        // Determine architecture
+        // Determine architecture - Xray uses "macos-arm64-v8a" and "macos-64" naming
         #if arch(arm64)
-        let arch = "darwin-arm64"
+        let arch = "macos-arm64"
         #else
-        let arch = "darwin-64"
+        let arch = "macos-64"
         #endif
         
         // Get latest release from GitHub
@@ -82,8 +82,11 @@ final class XrayService: ObservableObject {
             throw XrayError.downloadFailed("Failed to parse releases")
         }
         
-        // Find the correct asset
-        guard let asset = assets.first(where: { ($0["name"] as? String)?.contains(arch) == true }),
+        // Find the correct asset (look for .zip file containing arch name)
+        guard let asset = assets.first(where: { 
+            guard let name = $0["name"] as? String else { return false }
+            return name.contains(arch) && name.hasSuffix(".zip")
+        }),
               let downloadURL = asset["browser_download_url"] as? String else {
             throw XrayError.downloadFailed("Asset not found for \(arch)")
         }
